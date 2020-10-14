@@ -5,7 +5,7 @@ import docplex.mp
 from docplex.mp.model import Model
 from itertools import combinations as comb
 from itertools import  count
-from dataclasses import dataclass
+from collections import namedtuple
 import networkx as nx
 
 
@@ -37,11 +37,8 @@ def trunc_precisely(elem):
 
 class MaxCliqueProblem:
 
-    @dataclass
-    class Node:
-        """Specify structure
-        for nodes
-        """
+    Node = namedtuple('Node', ['constraint', 'var_to_branch'])
+
 
     def __init__(self):
         self._conf = False
@@ -49,8 +46,8 @@ class MaxCliqueProblem:
         print("Start conf model")
         self.configure_model()
         print("End conf model")
-        self.best_objective = 0
-        self.best_objective_vals = 0
+        self.objective_best = 0
+        self.objective_best_vals = 0
         self.cutted = 0
     
     def solve(self):
@@ -59,7 +56,8 @@ class MaxCliqueProblem:
         # problem
         assert self._conf, "Configurate model first!"
         print("Start to solve")
-        self.BnBMaxClique()
+        #self.BnBMaxClique()
+        self.BnBMaxCliqueNonRecursive()
 
     def get_input(self):
         INP = ['c125.9.txt','keller4.txt','p_hat300_1.txt','brock200_2.txt'][0]
@@ -74,15 +72,15 @@ class MaxCliqueProblem:
         self.cp = Model(name='Max_clique')
 
         # Continious model vars 
-        self.Y = {i : self.cp.continuous_var(name= 'y_{0}'.format(i)) for i in self.Nodes}
+        self.Y = {i: self.cp.continuous_var(name='y_{0}'.format(i)) for i in self.Nodes}
 
         # y constrains
-        self.Y_cons = { n : self.cp.add_constraint( self.Y[n] <= 1) for n in self.Nodes }
+        self.Y_cons = {n: self.cp.add_constraint(self.Y[n] <= 1) for n in self.Nodes}
 
         # Constrains for clique
         # Natural constraints
-        for i,j in comb(self.Nodes,2):
-            if [i,j] not in self.Edges and [j,i] not in self.Edges:
+        for i, j in comb(self.Nodes,2):
+            if [i, j] not in self.Edges and [j, i] not in self.Edges:
                 self.cp.add_constraint((self.Y[i] + self.Y[j]) <= 1)
 
         # Add constrains: nodes cant be in one clique
@@ -150,18 +148,18 @@ class MaxCliqueProblem:
 
         # If current branch upper bound not more
         # than known objective
-        if trunc_precisely(obj) <=  self.best_objective:
+        if trunc_precisely(obj) <=  self.objective_best:
             self.cutted += 1
             print("Cut branch. Obj: ", obj, " Cutting count: ", self.cutted)
             # Cut it
             return
 
         # If current solution better then previous
-        if is_int_list(val) and obj > self.best_objective:
-            print("--------------------Find solution: ", obj,'--------------------')
+        if is_int_list(val) and obj > self.objective_best:
+            print("--------------------Find solution: ", obj, '--------------------')
             # Remember it
-            self.best_objective = obj
-            self.best_objective_vals = val
+            self.objective_best = obj
+            self.objective_best_vals = val
 
         # Else - branching
 
@@ -180,7 +178,6 @@ class MaxCliqueProblem:
             # Remove constrain from the model
             self.cp.remove_constraint(constr)
 
-
     def BnBMaxCliqueNonRecursive(self):
         """Compute optimal solutuon
         for max clique problem using
@@ -193,65 +190,76 @@ class MaxCliqueProblem:
         
         nodes = PriorityQueue()
         sol = self.cp.solve()
-        best_objective = (0,0)
-        id = 0
-        # Id of pred computed node
-        prev = 0
-
-        comp_tree = nx.Graph()
+        objective_best = (0, 0)
+        # Constraints of pred computed node
+        constr_set_prev = frozenset()
+        variables_set = set(self.Y.values())
         obj = sol.get_objective_value()
-        values = sol.get_all_values()
         
         # Put solution into queue.
         # And put beginning node into tree
-        nodes.add_task(priority=obj, task=id)
-        comp_tree.add_node(id)
-        id += 1
+        nodes.add_task(priority=obj, task=frozenset())
         
         while nodes:
             # Pop node from queue
-            obj, cur_id = nodes.pop_task_and_priority()
+            obj, constr_set = nodes.pop_task_and_priority()
 
-            # Get Path of constraints
-            constr_path = nx.single_source_shortest_path(comp_tree)[prev]
+            print("obj : ", obj)
 
+            # Get constrains intersection
+            intersec = constr_set_prev.intersection(constr_set)
+            # TODO use bath constraints
+            # Remove inappropriate constraints
+            for x in constr_set_prev.difference(intersec):
+                self.cp.remove_constraint(x.c)
+            # Add appropriate constraints
+            for x in constr_set.difference(intersec):
+                self.cp.add_constraint(x)
+
+            constr_set_prev = constr_set
             # Apply 
-
 
             # Cut if current node upper bound
             # less than best int obj
-            if trunc_precisely(obj) <=  self.best_objective:
+            if trunc_precisely(obj) <= self.objective_best:
                 self.cutted += 1
                 print("Cut branch. Obj: ", obj, " Cutting count: ", self.cutted)
                 # Cut it
                 continue
 
-            print("obj : ", obj)
-            print("task", task)
-            
+
+
+            # Get variable to branch
+
+            var_to_branch = variables_set.difference({x.left_expr for x in constr_set}).pop()
+            #i = MaxCliqueProblem.get_node_index_to_branch(self.cp.)
+
             # If it's integer solution
-            if i == -1:
+            if var_to_branch is None:
+
                # Remember best solution
-               if best_objective[0] < obj:
-                    best_objective = (obj,values)
+               if objective_best[0] < obj:
+                    print("--------------------Find solution: ", obj, '--------------------')
+                    objective_best = (obj, constr_set)
             
             else:
                 # Branch it!
 
-                i = MaxCliqueProblem.get_node_index_to_branch(values)
+
                     
-                for ind in [0,1]:
+                for ind in [0, 1]:
                     # Set i-th constraint to val 
-                    constr = self.cp.add_constraint(self.Y[i] == ind)
-                    
+                    constr = self.cp.add_constraint(var_to_branch == ind)
+
                     # Solve it
                     sol = self.cp.solve()
 
+                    print("Branching: ", constr)
                     if sol is not None:
                         # Save results
                         obj = sol.get_objective_value()
-                        values = sol.get_all_values()
-                        nodes.add_task(priority=obj, task={ 'values' :values, 'constraints' : constraints + [constr] })
+                        constr_new = constr_set.union({constr})
+                        nodes.add_task(priority=obj, task=constr_new)
                     
                     # Remove constrain from the model
                     self.cp.remove_constraint(constr)
@@ -262,5 +270,5 @@ if __name__ == "__main__":
     print(pathlib.Path(__file__).parent.absolute())
     problem = MaxCliqueProblem()
     problem.solve()
-    print(problem.best_objective)
-    print(problem.best_objective_vals)
+    print(problem.objective_best)
+    print(problem.objective_best_vals)

@@ -1,6 +1,14 @@
-import context
-from src import PriorityQueue 
 import unittest
+
+import os.path as osp
+import sys
+import inspect
+current_dir = osp.dirname(osp.abspath(inspect.getfile(inspect.currentframe())))
+parent_dir = osp.dirname(current_dir)
+sys.path.insert(0, parent_dir)
+
+from src import  PriorityQue
+
 
 class TestPriorityQueue(unittest.TestCase):
 

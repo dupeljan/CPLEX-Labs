@@ -14,7 +14,7 @@ class PriorityQueue:
         'Add a new task or update the priority of an existing task'
         if task in self.entry_finder:
             self.remove_task(task)
-        entry = [priority, task]
+        entry = [-priority, task]
         self.entry_finder[task] = entry
         heappush(self.pq, entry)
 
@@ -29,7 +29,7 @@ class PriorityQueue:
             priority, task = heappop(self.pq)
             if task is not self.REMOVED:
                 del self.entry_finder[task]
-                return priority, task
+                return -priority, task
         raise KeyError('pop from an empty priority queue')
         
     def get_list_copy(self):
