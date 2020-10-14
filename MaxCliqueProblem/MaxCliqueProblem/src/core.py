@@ -7,6 +7,7 @@ from itertools import combinations as comb
 from itertools import  count
 from collections import namedtuple
 import networkx as nx
+import time
 
 
 
@@ -37,7 +38,7 @@ def trunc_precisely(elem):
 
 class MaxCliqueProblem:
 
-    Node = namedtuple('Node', ['constraint', 'var_to_branch'])
+    Node = namedtuple('Node', ['constraints', 'var_to_branch'])
 
 
     def __init__(self):
@@ -49,6 +50,7 @@ class MaxCliqueProblem:
         self.objective_best = 0
         self.objective_best_vals = 0
         self.cutted = 0
+        self.time_elapsed = 0
     
     def solve(self):
         # CP must be CPLEX model
@@ -57,7 +59,9 @@ class MaxCliqueProblem:
         assert self._conf, "Configurate model first!"
         print("Start to solve")
         #self.BnBMaxClique()
+        start_time = time.time()
         self.BnBMaxCliqueNonRecursive()
+        self.time_elapsed = time.time() - start_time
 
     def get_input(self):
         INP = ['c125.9.txt','keller4.txt','p_hat300_1.txt','brock200_2.txt'][0]
@@ -195,15 +199,19 @@ class MaxCliqueProblem:
         constr_set_prev = frozenset()
         variables_set = set(self.Y.values())
         obj = sol.get_objective_value()
+        i = MaxCliqueProblem.get_node_index_to_branch(sol.get_all_values())
+        var_to_branch_new = self.Y[self.Nodes[i]] if i != -1 else None
         
         # Put solution into queue.
         # And put beginning node into tree
-        nodes.add_task(priority=obj, task=frozenset())
+        nodes.add_task(priority=obj, task=MaxCliqueProblem.Node(constraints=frozenset(),
+                                                                var_to_branch=var_to_branch_new))
         
         while nodes:
             # Pop node from queue
-            obj, constr_set = nodes.pop_task_and_priority()
+            obj, node = nodes.pop_task_and_priority()
 
+            constr_set = node.constraints
             print("obj : ", obj)
 
             # Get constrains intersection
@@ -211,7 +219,7 @@ class MaxCliqueProblem:
             # TODO use bath constraints
             # Remove inappropriate constraints
             for x in constr_set_prev.difference(intersec):
-                self.cp.remove_constraint(x.c)
+                self.cp.remove_constraint(x)
             # Add appropriate constraints
             for x in constr_set.difference(intersec):
                 self.cp.add_constraint(x)
@@ -227,11 +235,11 @@ class MaxCliqueProblem:
                 # Cut it
                 continue
 
-
-
             # Get variable to branch
 
-            var_to_branch = variables_set.difference({x.left_expr for x in constr_set}).pop()
+            var_to_branch = node.var_to_branch
+            #
+            #var_to_branch = variables_set.difference({x.left_expr for x in constr_set}).pop()
             #i = MaxCliqueProblem.get_node_index_to_branch(self.cp.)
 
             # If it's integer solution
@@ -243,10 +251,9 @@ class MaxCliqueProblem:
                     objective_best = (obj, constr_set)
             
             else:
+
                 # Branch it!
 
-
-                    
                 for ind in [0, 1]:
                     # Set i-th constraint to val 
                     constr = self.cp.add_constraint(var_to_branch == ind)
@@ -258,8 +265,12 @@ class MaxCliqueProblem:
                     if sol is not None:
                         # Save results
                         obj = sol.get_objective_value()
-                        constr_new = constr_set.union({constr})
-                        nodes.add_task(priority=obj, task=constr_new)
+                        # Find appropriate variable to branch
+                        i = MaxCliqueProblem.get_node_index_to_branch(sol.get_all_values())
+                        var_to_branch_new = self.Y[self.Nodes[i]] if i != -1 else None
+                        node_new = MaxCliqueProblem.Node(constraints=constr_set.union({constr}),
+                                                         var_to_branch=var_to_branch_new)
+                        nodes.add_task(priority=obj, task=node_new)
                     
                     # Remove constrain from the model
                     self.cp.remove_constraint(constr)
@@ -272,3 +283,4 @@ if __name__ == "__main__":
     problem.solve()
     print(problem.objective_best)
     print(problem.objective_best_vals)
+    print("Time elapsed: ", problem.time_elapsed)
