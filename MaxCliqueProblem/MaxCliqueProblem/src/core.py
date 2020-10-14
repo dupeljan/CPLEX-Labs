@@ -64,7 +64,7 @@ class MaxCliqueProblem:
         self.time_elapsed = time.time() - start_time
 
     def get_input(self):
-        INP = ['c125.9.txt','keller4.txt','p_hat300_1.txt','brock200_2.txt'][0]
+        INP = ['c125.9.txt', 'keller4.txt', 'p_hat300_1.txt', 'brock200_2.txt'][0]
         self.Edges = [ list(map( int, str_.split()[1:3])) for str_ in open('input/'+INP).readlines() if str_[0] == 'e' ]
         self.Nodes = list(set([ y for x in self.Edges for y in x]))
         # Set variable to protect BnB metod from unconfigurate model
@@ -206,7 +206,7 @@ class MaxCliqueProblem:
         # And put beginning node into tree
         nodes.add_task(priority=obj, task=MaxCliqueProblem.Node(constraints=frozenset(),
                                                                 var_to_branch=var_to_branch_new))
-        
+        unique_constr = list()
         while nodes:
             # Pop node from queue
             obj, node = nodes.pop_task_and_priority()
@@ -215,6 +215,7 @@ class MaxCliqueProblem:
             print("obj : ", obj)
 
             # Get constrains intersection
+            time_beg = time.time()
             intersec = constr_set_prev.intersection(constr_set)
             # TODO use bath constraints
             # Remove inappropriate constraints
@@ -225,6 +226,7 @@ class MaxCliqueProblem:
                 self.cp.add_constraint(x)
 
             constr_set_prev = constr_set
+            print("Time to jump: ", time.time() - time_beg)
             # Apply 
 
             # Cut if current node upper bound
@@ -254,10 +256,22 @@ class MaxCliqueProblem:
 
                 # Branch it!
 
+
                 for ind in [0, 1]:
                     # Set i-th constraint to val 
                     constr = self.cp.add_constraint(var_to_branch == ind)
 
+                    # TODO put it above cicle
+                    constr_new = constr_set.union({constr})
+                    '''
+                    x = {x for x in constr_new}
+                    if x in unique_constr:
+                        print("-----------------Dublicated comp found!----------------------------")
+                        self.cp.remove_constraint(constr)
+                        continue
+                    else:
+                        unique_constr.append(x)
+                    '''
                     # Solve it
                     sol = self.cp.solve()
 
