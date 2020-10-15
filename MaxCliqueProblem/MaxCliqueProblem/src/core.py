@@ -40,6 +40,18 @@ class MaxCliqueProblem:
 
     Node = namedtuple('Node', ['constraints', 'var_to_branch'])
 
+    def colors_to_indep_set(self, coloring):
+        '''Return dict, where
+        key is collor and
+        value is list of nodes
+            colored in key color
+        '''
+        comp = dict()
+        for vert, color in coloring.items():
+            if color not in comp:
+                comp[color] = []
+            comp[color] += [self.Y[vert]]
+        return comp
 
     def __init__(self):
         self._conf = False
@@ -83,27 +95,43 @@ class MaxCliqueProblem:
 
         # Constrains for clique
         # Natural constraints
-        for i, j in comb(self.Nodes,2):
+        bath = []
+        for i, j in comb(self.Nodes, 2):
             if [i, j] not in self.Edges and [j, i] not in self.Edges:
-                self.cp.add_constraint((self.Y[i] + self.Y[j]) <= 1)
+                bath += [self.Y[i] + self.Y[j] <= 1]
+
+        self.cp.add_constraints(bath)
 
         # Add constrains: nodes cant be in one clique
         # if you can color them in one color
         # Create graph
         G = nx.Graph()
         G.add_edges_from(self.Edges)
+
+        comps = set()
         # Color it
-        coloring = nx.algorithms.coloring.greedy_color(G)
-        # Get components of one color
-        comp = dict()
-        for vert, color in coloring.items():
-            if color not in comp:
-                comp[color] = []
-            comp[color] += [self.Y[vert]]
+        for strategy in ['largest_first', 'smallest_last',
+                         'independent_set', 'connected_sequential_bfs',
+                         'connected_sequential_dfs', 'saturation_largest_first']:
+
+
+            coloring = nx.algorithms.coloring.greedy_color(G, strategy=strategy)
+
+            '''
+            ind_set = self.colors_to_indep_set(coloring).values()            
+            # Get it to maximal on including
+            ind_set_maximal = ind_set.copy()
+            for i, color_old in ind_set.items():
+                for j, color_new in ind_set_maximal.items():
+                    if i != j:
+            '''
+            
+            comps |= {self.cp.sum(x) <= 1 for x in self.colors_to_indep_set(coloring).values()}
 
         # Add constraints
-        for c in comp.values():
-            self.cp.add_constraint(self.cp.sum(c) <= 1)
+        self.cp.add_constraints(comps)
+        #for c in comp.values():
+        #    self.cp.add_constraint(self.cp.sum(c) <= 1)
 
         # Set objective
         self.cp.maximize(self.cp.sum(self.Y))
@@ -156,17 +184,18 @@ class MaxCliqueProblem:
             # Cut it
             return
 
-        # If current solution better then previous
-        if is_int_list(val) and obj > self.objective_best:
-            print("--------------------Find solution: ", obj, '--------------------')
-            # Remember it
-            self.objective_best = obj
-            self.objective_best_vals = val
-
-        # Else - branching
-
         # Get best branching value
         i = MaxCliqueProblem.get_node_index_to_branch(val)
+        # If current solution better then previous
+        if i == -1:
+            if obj > self.objective_best:
+                print("--------------------Find solution: ", obj, '--------------------')
+                # Remember it
+                self.objective_best = obj
+                self.objective_best_vals = val
+            return
+
+        # Else - branching
 
         for ind in [0, 1]:
             # Set i-th constraint to val
@@ -181,6 +210,15 @@ class MaxCliqueProblem:
             self.cp.remove_constraint(constr)
 
     def BnBMaxCliqueDFS(self):
+        """Compute optimal solutuon
+        for max clique problem using
+        Branch and bounds method.
+        Use DFS during computations
+        """
+        # CP must be CPLEX model
+        # inicialized for MaxClique
+        # problem
+        assert self._conf, "Configurate model first!"
 
         stack = deque()
 
@@ -272,7 +310,9 @@ class MaxCliqueProblem:
     def BnBMaxCliqueBFS(self):
         """Compute optimal solutuon
         for max clique problem using
-        Branch and bounds method 
+        Branch and bounds method.
+        Go thought maximum bound nodes during
+        computation
         """
         # CP must be CPLEX model
         # inicialized for MaxClique
@@ -306,11 +346,10 @@ class MaxCliqueProblem:
             intersec = constr_set_prev.intersection(constr_set)
             # TODO use bath constraints
             # Remove inappropriate constraints
-            for x in constr_set_prev.difference(intersec):
-                self.cp.remove_constraint(x)
+
+            self.cp.remove_constraints(constr_set_prev.difference(intersec))
             # Add appropriate constraints
-            for x in constr_set.difference(intersec):
-                self.cp.add_constraint(x)
+            self.cp.add_constraints(constr_set.difference(intersec))
 
             constr_set_prev = constr_set
             print("Time to jump: ", time.time() - time_beg)
