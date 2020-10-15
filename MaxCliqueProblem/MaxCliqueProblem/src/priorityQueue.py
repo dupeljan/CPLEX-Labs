@@ -24,18 +24,16 @@ class PriorityQueue:
         entry[-1] = self.REMOVED
 
     def pop_task_and_priority(self):
-        'Remove and return the lowest priority task and the priority. Raise KeyError if empty.'
+        'Remove and return the lowest priority task and the priority. None if empty.'
         while self.pq:
             priority, task = heappop(self.pq)
             if task is not self.REMOVED:
                 del self.entry_finder[task]
                 return -priority, task
-        raise KeyError('pop from an empty priority queue')
+
+        return None
         
     def get_list_copy(self):
         'Return copy of all task list'
         return self.pq.copy()
-    
-    def __nonzero__(self):
-        'Return value in conditional statements'
-        return not not self.pq 
+

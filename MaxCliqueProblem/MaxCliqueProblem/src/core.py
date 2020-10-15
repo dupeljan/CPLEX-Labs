@@ -50,12 +50,31 @@ class MaxCliqueProblem:
         for vert, color in coloring.items():
             if color not in comp:
                 comp[color] = []
-            comp[color] += [self.Y[vert]]
+            comp[color] += [vert]
         return comp
+
+    def maximal_ind_set_colors(self, ind_set):
+        """Maximaze independent set
+        for each color in ind_set
+        """
+        ind_set_maximal = {i: set(v) for i, v in ind_set.items()}
+        # Choose pairs of colors
+        for i in ind_set.keys():
+            for j, color_find in ind_set.items():
+                if i != j:
+                    # Choose elem from color_new
+                    for x in color_find:
+                        # If you can add it to
+                        # this independent set
+                        if all([not self.G.has_edge(x, y) for y in ind_set_maximal[i]]):
+                            ind_set_maximal[i].add(x)
+
+        return ind_set_maximal
 
     def __init__(self):
         self._conf = False
         self.get_input()
+        self.G = nx.Graph()
         print("Start conf model")
         self.configure_model()
         print("End conf model")
@@ -63,6 +82,7 @@ class MaxCliqueProblem:
         self.objective_best_vals = 0
         self.cutted = 0
         self.time_elapsed = 0
+
     
     def solve(self):
         # CP must be CPLEX model
@@ -76,8 +96,8 @@ class MaxCliqueProblem:
         self.time_elapsed = time.time() - start_time
 
     def get_input(self):
-        INP = ['c125.9.txt', 'keller4.txt', 'p_hat300_1.txt', 'brock200_2.txt'][0]
-        self.Edges = [ list(map( int, str_.split()[1:3])) for str_ in open('input/'+INP).readlines() if str_[0] == 'e' ]
+        INP = ['c125.9.txt', 'keller4.txt', 'p_hat300_1.txt', 'brock200_2.txt'][3]
+        self.Edges = [ list(map( int, str_.split()[1:3])) for str_ in open('input/'+INP).readlines() if str_[0] == 'e']
         self.Nodes = list(set([ y for x in self.Edges for y in x]))
         # Set variable to protect BnB metod from unconfigurate model
         self._conf = False
@@ -105,8 +125,8 @@ class MaxCliqueProblem:
         # Add constrains: nodes cant be in one clique
         # if you can color them in one color
         # Create graph
-        G = nx.Graph()
-        G.add_edges_from(self.Edges)
+
+        self.G.add_edges_from(self.Edges)
 
         comps = set()
         # Color it
@@ -115,18 +135,26 @@ class MaxCliqueProblem:
                          'connected_sequential_dfs', 'saturation_largest_first']:
 
 
-            coloring = nx.algorithms.coloring.greedy_color(G, strategy=strategy)
+            coloring = nx.algorithms.coloring.greedy_color(self.G, strategy=strategy)
 
-            '''
-            ind_set = self.colors_to_indep_set(coloring).values()            
+
+            ind_set = self.colors_to_indep_set(coloring)
             # Get it to maximal on including
-            ind_set_maximal = ind_set.copy()
-            for i, color_old in ind_set.items():
-                for j, color_new in ind_set_maximal.items():
-                    if i != j:
-            '''
-            
-            comps |= {self.cp.sum(x) <= 1 for x in self.colors_to_indep_set(coloring).values()}
+
+            ind_set_maximal = self.maximal_ind_set_colors(ind_set)
+
+            comps |= {self.cp.sum([self.Y[i] for i in x ]) <= 1 for x in ind_set_maximal.values()}
+
+        # Trying find best coloring in randomized way
+        coloring_list = list()
+        for i in range(100):
+            coloring_list.append(self.colors_to_indep_set(nx.algorithms.coloring.greedy_color(self.G,
+                                                                                        strategy='random_sequential')))
+        coloring_list = sorted(coloring_list, key=lambda x: len(x.keys()))
+
+        for elem in coloring_list[:5]:
+            ind_set_maximal = self.maximal_ind_set_colors(elem)
+            comps |= {self.cp.sum([self.Y[i] for i in x]) <= 1 for x in ind_set_maximal.values()}
 
         # Add constraints
         self.cp.add_constraints(comps)
@@ -334,9 +362,12 @@ class MaxCliqueProblem:
         nodes.add_task(priority=obj, task=MaxCliqueProblem.Node(constraints=frozenset(),
                                                                 var_to_branch=var_to_branch_new))
         unique_constr = list()
-        while nodes:
+        while True:
             # Pop node from queue
-            obj, node = nodes.pop_task_and_priority()
+            pop = nodes.pop_task_and_priority()
+            if pop is None:
+                break
+            obj, node = pop
 
             constr_set = node.constraints
             print("obj : ", obj)
@@ -344,7 +375,6 @@ class MaxCliqueProblem:
             # Get constrains intersection
             time_beg = time.time()
             intersec = constr_set_prev.intersection(constr_set)
-            # TODO use bath constraints
             # Remove inappropriate constraints
 
             self.cp.remove_constraints(constr_set_prev.difference(intersec))
