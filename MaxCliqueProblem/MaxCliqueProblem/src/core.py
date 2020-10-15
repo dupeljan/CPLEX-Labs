@@ -5,7 +5,7 @@ import docplex.mp
 from docplex.mp.model import Model
 from itertools import combinations as comb
 from itertools import  count
-from collections import namedtuple
+from collections import namedtuple, deque
 import networkx as nx
 import time
 
@@ -60,7 +60,7 @@ class MaxCliqueProblem:
         print("Start to solve")
         #self.BnBMaxClique()
         start_time = time.time()
-        self.BnBMaxCliqueNonRecursive()
+        self.BnBMaxCliqueDFS()
         self.time_elapsed = time.time() - start_time
 
     def get_input(self):
@@ -104,8 +104,6 @@ class MaxCliqueProblem:
         # Add constraints
         for c in comp.values():
             self.cp.add_constraint(self.cp.sum(c) <= 1)
-
-
 
         # Set objective
         self.cp.maximize(self.cp.sum(self.Y))
@@ -182,7 +180,96 @@ class MaxCliqueProblem:
             # Remove constrain from the model
             self.cp.remove_constraint(constr)
 
-    def BnBMaxCliqueNonRecursive(self):
+    def BnBMaxCliqueDFS(self):
+
+        stack = deque()
+
+        stack.append({"val": 0})
+        cons = self.cp.number_of_constraints
+        cons_before = 0
+        while stack:
+            elem = stack.pop()
+            # If we don't visit this node yet
+            if elem["val"] == 0:
+                sol = self.cp.solve()
+                if sol is None:
+                    print("None solution found")
+                    continue
+
+                obj = sol.get_objective_value()
+
+                # Cut if current node upper bound
+                # less than best int obj
+                if trunc_precisely(obj) <= self.objective_best:
+                    self.cutted += 1
+                    print("Cut branch: ", self.cutted)
+                    continue
+
+                vals = sol.get_all_values()
+                i = MaxCliqueProblem.get_node_index_to_branch(vals)
+
+                # If it's integer solution
+                if i == -1:
+                    # If current solution better then previous
+                    if self.objective_best < obj:
+                        print("--------------------Find solution: ", obj, '--------------------')
+                        # Remember it
+                        self.objective_best = obj
+                        self.objective_best_vals = vals
+
+                    continue
+
+                # Set elem branch var
+                i = self.Y[self.Nodes[i]]
+                elem['constr'] = self.cp.add_constraint(i == 0)
+
+                print("Branch by ", i, " obj: ", obj)
+                for ind in range(2):
+                    stack.append(elem)
+                    stack.append({"val": 0})
+
+
+                '''
+                cons_new = self.cp.number_of_constraints - cons
+                print("0N ", cons_new)
+                if cons_before + 1 != cons_new:
+                    print("0ERROR")
+                cons_before = cons_new
+                '''
+                
+                elem["val"] += 1
+
+            # If it's already visited once node
+            elif elem["val"] == 1:
+                constr = elem["constr"]
+                self.cp.remove_constraint(constr)
+                elem["constr"] = self.cp.add_constraint(constr.lhs == 1)
+
+                '''
+                cons_new = self.cp.number_of_constraints - cons
+                print("1N ", cons_new)
+                if cons_before != cons_new:
+                    print("1ERROR")
+                cons_before = cons_new
+                '''
+
+                elem["val"] += 1
+
+            # If it's already visited twice node
+            else:
+                self.cp.remove_constraint(elem["constr"])
+
+                '''
+                cons_new = self.cp.number_of_constraints - cons
+                print("2N ", cons_new)
+                if cons_before - 1 != cons_new:
+                    print("2ERROR")
+                cons_before = cons_new
+
+                print("2N ", self.cp.number_of_constraints - cons)
+                '''
+
+    def BnBMaxCliqueBFS(self):
         """Compute optimal solutuon
         for max clique problem using
         Branch and bounds method 
@@ -248,9 +335,10 @@ class MaxCliqueProblem:
             if var_to_branch is None:
 
                # Remember best solution
-               if objective_best[0] < obj:
+               if self.objective_best < obj:
                     print("--------------------Find solution: ", obj, '--------------------')
-                    objective_best = (obj, constr_set)
+                    self.objective_best = obj
+                    self.objective_best_vals = constr_set
             
             else:
 
@@ -261,17 +349,6 @@ class MaxCliqueProblem:
                     # Set i-th constraint to val 
                     constr = self.cp.add_constraint(var_to_branch == ind)
 
-                    # TODO put it above cicle
-                    constr_new = constr_set.union({constr})
-                    '''
-                    x = {x for x in constr_new}
-                    if x in unique_constr:
-                        print("-----------------Dublicated comp found!----------------------------")
-                        self.cp.remove_constraint(constr)
-                        continue
-                    else:
-                        unique_constr.append(x)
-                    '''
                     # Solve it
                     sol = self.cp.solve()
 
