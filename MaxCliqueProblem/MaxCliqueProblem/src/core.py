@@ -1,8 +1,9 @@
 import numpy as np
 from priorityQueue import PriorityQueue
+from batchedModel import BatchedModel
 
 import docplex.mp
-from docplex.mp.model import Model
+#from docplex.mp.model import Model
 from itertools import combinations as comb
 from itertools import  count
 from collections import namedtuple, deque
@@ -140,8 +141,8 @@ class MaxCliqueProblem:
         self.time_elapsed = time.time() - start_time
 
     def get_input(self):
-        INP = ['c125.9.txt', 'keller4.txt', 'p_hat300_1.txt', 'brock200_2.txt'][0]
-        self.Edges = [list(map( int, str_.split()[1:3])) for str_ in open('input/'+INP).readlines() if str_[0] == 'e']
+        self.INP = ['c125.9.txt', 'keller4.txt', 'p_hat300_1.txt', 'brock200_2.txt'][0]
+        self.Edges = [list(map( int, str_.split()[1:3])) for str_ in open('input/'+self.INP).readlines() if str_[0] == 'e']
         self.Nodes = list(set([ y for x in self.Edges for y in x]))
         # Set variable to protect BnB metod from unconfigurate model
         self._conf = False
@@ -149,7 +150,7 @@ class MaxCliqueProblem:
 
 
     def configure_model(self):
-        self.cp = Model(name='Max_clique')
+        self.cp = BatchedModel(name='Max_clique')
 
         # Continious model vars 
         self.Y = {i: self.cp.continuous_var(name='y_{0}'.format(i)) for i in self.Nodes}
@@ -270,7 +271,7 @@ class MaxCliqueProblem:
 
         for ind in [0, 1]:
             # Set i-th constraint to val
-            constr = self.cp.add_constraint(self.Y[self.Nodes[i]] == ind)
+            constr = self.cp.add_constraint_bath(self.Y[self.Nodes[i]] == ind)
 
             print("Branch: " + str(constr), "obj: " + str(obj))
 
@@ -278,7 +279,7 @@ class MaxCliqueProblem:
             self.BnBMaxClique()
 
             # Remove constrain from the model
-            self.cp.remove_constraint(constr)
+            self.cp.remove_constraint_bath(constr)
 
     def BnBMaxCliqueDFS(self):
         """Compute optimal solutuon
@@ -330,7 +331,7 @@ class MaxCliqueProblem:
 
                 # Set elem branch var
                 i = self.Y[self.Nodes[i]]
-                elem['constr'] = self.cp.add_constraint(i == 0)
+                elem['constr'] = self.cp.add_constraint_bath(i == 0)
 
                 print("Branch by ", i, " obj: ", obj)
                 for ind in range(2):
@@ -351,8 +352,8 @@ class MaxCliqueProblem:
             # If it's already visited once node
             elif elem["val"] == 1:
                 constr = elem["constr"]
-                self.cp.remove_constraint(constr)
-                elem["constr"] = self.cp.add_constraint(constr.lhs == 1)
+                self.cp.remove_constraint_bath(constr)
+                elem["constr"] = self.cp.add_constraint_bath(constr.lhs == 1)
 
                 '''
                 cons_new = self.cp.number_of_constraints - cons
@@ -366,7 +367,7 @@ class MaxCliqueProblem:
 
             # If it's already visited twice node
             else:
-                self.cp.remove_constraint(elem["constr"])
+                self.cp.remove_constraint_bath(elem["constr"])
 
                 '''
                 cons_new = self.cp.number_of_constraints - cons
