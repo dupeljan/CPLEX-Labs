@@ -40,6 +40,47 @@ class MaxCliqueProblem:
 
     Node = namedtuple('Node', ['constraints', 'var_to_branch'])
 
+    def init_heuristic(self):
+        """Try to find max clique
+        use heuristic neighbors method
+        """
+        print("Start heuristic search...")
+        for v in self.Nodes:
+            # Add current node to
+            # current clique
+            clique_cur = {v}
+            clique_neighbors = set(self.G.neighbors(v))
+
+            while True:
+                # Compute neighbors interception
+                for c in clique_cur:
+                    clique_neighbors &= set(self.G.neighbors(c))
+
+                # Elements in clique can't be
+                # clique neighbors
+                clique_neighbors -= clique_cur
+
+                # Exit if we can't add anything
+                if not clique_neighbors:
+                    break
+
+                # Find best candidate
+                candidates_deg = np.array(self.G.degree(clique_neighbors))
+                i = np.argmax(candidates_deg[:, 1])
+                candidate_best = candidates_deg[i][0]
+
+                # Add it to clique
+                clique_cur |= {candidate_best}
+
+            # Keep new clique
+            # if it's better than previous
+            if len(clique_cur) >= self.objective_best:
+                self.objective_best = len(clique_cur)
+                self.objective_best_vals = clique_cur
+                print("-------------Find solution: ", self.objective_best, "-------------")
+
+
+
     def colors_to_indep_set(self, coloring):
         '''Return dict, where
         key is collor and
@@ -75,11 +116,11 @@ class MaxCliqueProblem:
         self._conf = False
         self.get_input()
         self.G = nx.Graph()
+        self.objective_best = 0
+        self.objective_best_vals = 0
         print("Start conf model")
         self.configure_model()
         print("End conf model")
-        self.objective_best = 0
-        self.objective_best_vals = 0
         self.cutted = 0
         self.time_elapsed = 0
 
@@ -96,8 +137,8 @@ class MaxCliqueProblem:
         self.time_elapsed = time.time() - start_time
 
     def get_input(self):
-        INP = ['c125.9.txt', 'keller4.txt', 'p_hat300_1.txt', 'brock200_2.txt'][3]
-        self.Edges = [ list(map( int, str_.split()[1:3])) for str_ in open('input/'+INP).readlines() if str_[0] == 'e']
+        INP = ['c125.9.txt', 'keller4.txt', 'p_hat300_1.txt', 'brock200_2.txt'][1]
+        self.Edges = [list(map( int, str_.split()[1:3])) for str_ in open('input/'+INP).readlines() if str_[0] == 'e']
         self.Nodes = list(set([ y for x in self.Edges for y in x]))
         # Set variable to protect BnB metod from unconfigurate model
         self._conf = False
@@ -143,7 +184,7 @@ class MaxCliqueProblem:
 
             ind_set_maximal = self.maximal_ind_set_colors(ind_set)
 
-            comps |= {self.cp.sum([self.Y[i] for i in x ]) <= 1 for x in ind_set_maximal.values()}
+            comps |= {self.cp.sum([self.Y[i] for i in x]) <= 1 for x in ind_set_maximal.values()}
 
         # Trying find best coloring in randomized way
         coloring_list = list()
@@ -158,11 +199,13 @@ class MaxCliqueProblem:
 
         # Add constraints
         self.cp.add_constraints(comps)
-        #for c in comp.values():
-        #    self.cp.add_constraint(self.cp.sum(c) <= 1)
 
         # Set objective
         self.cp.maximize(self.cp.sum(self.Y))
+
+        # Try to find heuristic solution
+        self.init_heuristic()
+
         # Allow BnB to work
         self._conf = True
 
