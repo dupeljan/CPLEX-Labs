@@ -34,7 +34,8 @@ def trunc_precisely(elem):
     """Trancate value in responce to
     EPS precision
     """
-    return  np.round(elem) if is_int(elem) else np.trunc(elem)
+    round_elem = np.round(elem)
+    return round_elem if np.isclose(elem, round_elem, atol=EPS) else np.trunc(elem)
 
 class MaxCliqueProblem:
 
@@ -130,6 +131,8 @@ class MaxCliqueProblem:
         # inicialized for MaxClique
         # problem
         assert self._conf, "Configurate model first!"
+        # Try to find heuristic solution
+        self.init_heuristic()
         print("Start to solve")
         #self.BnBMaxClique()
         start_time = time.time()
@@ -137,7 +140,7 @@ class MaxCliqueProblem:
         self.time_elapsed = time.time() - start_time
 
     def get_input(self):
-        INP = ['c125.9.txt', 'keller4.txt', 'p_hat300_1.txt', 'brock200_2.txt'][1]
+        INP = ['c125.9.txt', 'keller4.txt', 'p_hat300_1.txt', 'brock200_2.txt'][0]
         self.Edges = [list(map( int, str_.split()[1:3])) for str_ in open('input/'+INP).readlines() if str_[0] == 'e']
         self.Nodes = list(set([ y for x in self.Edges for y in x]))
         # Set variable to protect BnB metod from unconfigurate model
@@ -203,29 +206,26 @@ class MaxCliqueProblem:
         # Set objective
         self.cp.maximize(self.cp.sum(self.Y))
 
-        # Try to find heuristic solution
-        self.init_heuristic()
-
         # Allow BnB to work
         self._conf = True
 
     @staticmethod
-    def get_node_index_to_branch(elems):
+    def get_node_index_to_branch(elems: np.array):
         """Choose most apropriate 
         elem from elems to make 
         the branch.
         Return index of most appropriate element
-        from list or -1 if all elements is integers
+        from self.Node list or -1 if all elements is integers
         """
-        i = -1
-        val = 1.0
-        for j, elem in enumerate(elems):
-            val_ = abs(elem - np.round(elem))
-            if EPS < val_ < val:
-                i = j
-                val = val_
-                
-        return i
+
+        dists_to_near_int = np.abs(elems - np.round(elems))
+        candidates = dists_to_near_int[dists_to_near_int >= EPS]
+        if not np.any(candidates):
+            return -1
+        return np.argwhere(dists_to_near_int == np.min(candidates)).reshape(-1)[0]
+
+
+
                 
 
     def BnBMaxClique(self):
