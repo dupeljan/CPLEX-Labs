@@ -1,3 +1,6 @@
+# COPYRIGHT
+# Daniil Lyakhov
+# dupeljan@gmail.com
 import numpy as np
 from priorityQueue import PriorityQueue
 from batchedModel import BatchedModel
