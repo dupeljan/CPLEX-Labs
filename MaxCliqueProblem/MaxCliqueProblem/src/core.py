@@ -2,6 +2,7 @@ import numpy as np
 from priorityQueue import PriorityQueue
 from batchedModel import BatchedModel
 
+from functools import  reduce
 import docplex.mp
 #from docplex.mp.model import Model
 from itertools import combinations as comb
@@ -42,6 +43,15 @@ class MaxCliqueProblem:
 
     Node = namedtuple('Node', ['constraints', 'var_to_branch'])
 
+    def _is_best_vas_clique(self):
+        """Test if self.best_obj_vals is clique"""
+        for n in self.objective_best_vals:
+            neighbors = list(self.G.neighbors(n))
+            for j in set(self.objective_best_vals) - {n}:
+                if j not in neighbors:
+                    return False
+        return True
+
     def init_heuristic(self):
         """Try to find max clique
         use heuristic neighbors method
@@ -81,8 +91,6 @@ class MaxCliqueProblem:
                 self.objective_best_vals = clique_cur
                 print("-------------Find solution: ", self.objective_best, "-------------")
 
-
-
     def colors_to_indep_set(self, coloring):
         '''Return dict, where
         key is collor and
@@ -95,6 +103,135 @@ class MaxCliqueProblem:
                 comp[color] = []
             comp[color] += [vert]
         return comp
+
+    def local_search(self):
+        """Try to find better solution
+        based in best known solution.
+        Solution must be set of nodes"""
+
+        class Clique:
+            """Incapsulate clique manipulation"""
+            def __init__(self, clique, G):
+                # tau[n] =
+                # edge count from clique neighbor n
+                # to clique
+                self.G = G
+                self.tau = {n: 0 for n in self.G.nodes}
+                self.clique = set(clique)
+                self.clique_list = []
+                self.neighbors = reduce(lambda x, y: x | y, [set(self.G.neighbors(x)) for x in self.clique]) - \
+                                                                                                    self.clique
+                self._initzialized = False
+                self.maximize_init()
+                self._initzialized = True
+                self.iter_index = 0
+
+
+            def delete(self, value):
+                """Delete value from the
+                clique and update neighbors"""
+                self.clique -= {value}
+                self.tau[value] = len(self.clique) - 1
+                # Delete neighbors which is connected
+                # only with value
+                neighbors = list(self.G.neighbors(value))
+                neighbors_value_only = {n for n in neighbors if self.tau[n] == 1}
+                self.neighbors -= set(neighbors_value_only)
+                for n in neighbors:
+                    self.tau[n] -= 1
+
+                # rewind iterations
+                self._rewind()
+
+            def add(self, values):
+                """Add values to clique
+                and update neighbors and tau.
+                    values must be a set!"""
+                # Add values to list
+                self.clique |= values
+                # Update neighbors
+                new_neighbors = reduce(lambda x, y: x | y, [set(self.G.neighbors(x)) for x in values])
+                self.neighbors |= new_neighbors
+                # Remove clique nodes from neighbors
+                self.neighbors -= self.clique
+                # Update tau if already initialized
+                if self._initzialized:
+                    for n in new_neighbors:
+                        self.tau[n] += 1
+                        # if tau is equal clique len
+                        # then we need to add this vertex to clique
+                        if self.tau[n] == len(self.clique):
+                            self.add({n})
+
+                # rewind iterations
+                self._rewind()
+
+            def maximize_init(self):
+                """Try to maximize current clique
+                just find appropriate node in the
+                list of the neighbors"""
+                repeat = True
+                while repeat:
+                    repeat = False
+
+                    for n in self.neighbors:
+                        b = len(set(self.G.neighbors(n)) & self.clique)
+                        self.tau[n] = b
+                        # If we can add n to clique
+                        if b == len(self.clique):
+                            # add it and repeat from the begining
+                            self.add({n})
+                            repeat = True
+                            break
+
+            def _rewind(self):
+                """Start iteration from the
+                begining"""
+                self.clique_list = list(self.clique)
+                self.iter_index = 0
+
+            def __iter__(self):
+                self.clique_list = list(self.clique)
+                return self
+
+            def __next__(self):
+                try:
+                    self.iter_index += 1
+                    return self.clique_list[self.iter_index - 1]
+                except IndexError:
+                    raise StopIteration
+
+            def __len__(self):
+                return len(self.clique)
+
+        clique = Clique(set(self.objective_best_vals), self.G)
+        assert self._is_best_vas_clique(), "ERROR"
+        swap = ()
+        for x in clique:
+
+            # Find candidates to add
+            candidates = {n for n in clique.neighbors - set(self.G.neighbors(x)) if clique.tau[n] == len(clique) - 1}
+            for c in candidates:
+                # TODO sort and use set instead of set
+                pair = set(self.G.neighbors(c)) & candidates
+                # If we can add 2 nodes instead of one
+                if pair:
+                    swap = (x, c, pair.pop())
+                    print("Improve solution by 1!")
+                    # Update clique
+
+                    clique.delete(swap[0])
+                    clique.add(set(swap[1:]))
+                    self.objective_best_vals = clique.clique
+                    assert self._is_best_vas_clique(), "ERROR"
+                    break
+
+        if len(clique.clique) > self.objective_best:
+            print("---------------------------Find new solution: ", len(clique.clique),
+                                    " by local search---------------------------")
+            self.objective_best = len(clique.clique)
+            self.objective_best_vals = clique.clique
+
 
     def maximal_ind_set_colors(self, ind_set):
         """Maximaze independent set
@@ -126,7 +263,6 @@ class MaxCliqueProblem:
         self.cutted = 0
         self.time_elapsed = 0
 
-    
     def solve(self):
         # CP must be CPLEX model
         # inicialized for MaxClique
@@ -134,6 +270,9 @@ class MaxCliqueProblem:
         assert self._conf, "Configurate model first!"
         # Try to find heuristic solution
         self.init_heuristic()
+        assert self._is_best_vas_clique(), "ERROR"
+        print("Perform local search..")
+        self.local_search()
         print("Start to solve")
         #self.BnBMaxClique()
         start_time = time.time()
@@ -146,8 +285,6 @@ class MaxCliqueProblem:
         self.Nodes = list(set([ y for x in self.Edges for y in x]))
         # Set variable to protect BnB metod from unconfigurate model
         self._conf = False
-
-
 
     def configure_model(self):
         self.cp = BatchedModel(name='Max_clique')
@@ -224,10 +361,6 @@ class MaxCliqueProblem:
         if not np.any(candidates):
             return -1
         return np.argwhere(dists_to_near_int == np.min(candidates)).reshape(-1)[0]
-
-
-
-                
 
     def BnBMaxClique(self):
         """Compute optimal solutuon
@@ -325,7 +458,9 @@ class MaxCliqueProblem:
                         print("--------------------Find solution: ", obj, '--------------------')
                         # Remember it
                         self.objective_best = obj
-                        self.objective_best_vals = vals
+                        self.objective_best_vals = [self.Nodes[i] for i, val in enumerate(vals) if val == 1.0]
+                        print("Perform local search..")
+                        self.local_search()
 
                     continue
 
