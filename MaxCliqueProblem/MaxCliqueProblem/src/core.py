@@ -5,18 +5,54 @@ import numpy as np
 from priorityQueue import PriorityQueue
 from batchedModel import BatchedModel
 
+import threading
+
 from functools import  reduce
 import docplex.mp
 #from docplex.mp.model import Model
-from itertools import combinations as comb
+from itertools import combinations as comb, cycle
 from itertools import  count
 from collections import namedtuple, deque
 import networkx as nx
 import time
-
+from multiprocessing import Process
 
 
 EPS = 1e-8
+
+Content_list = \
+        [
+    #    'c-fat200-1.clq',
+   #     'c-fat200-2.clq',
+   #     'c-fat200-5.clq',
+   #     'c-fat500-1.clq',
+  #      'c-fat500-10.clq',
+  #      'c-fat500-2.clq',
+  #      'c-fat500-5.clq',
+  #      'MANN_a9.clq',
+  #      'hamming6-2.clq',
+ #       'hamming6-4.clq',
+ #       'gen200_p0.9_44.clq',
+ #       'gen200_p0.9_55.clq',
+#        'san200_0.7_1.clq',
+ #       'san200_0.7_2.clq',
+ #       'san200_0.9_1.clq',
+ #       'san200_0.9_2.clq',
+#        'san200_0.9_3.clq',
+ #       'sanr200_0.7.clq', Must run ones again
+ #       'C125.9.clq',
+#       'keller4.clq',
+        #'brock200_1.clq',
+#        'brock200_2.clq',
+        'brock200_3.clq',
+        'brock200_4.clq',
+#        'p_hat300-1.clq',
+        'p_hat300-2.clq'
+        ]
+
+
+
+
 
 
 def is_int(elem):
@@ -107,7 +143,7 @@ class MaxCliqueProblem:
             comp[color] += [vert]
         return comp
 
-    def local_search(self):
+    def local_search(self, clique_inp= None):
         """Try to find better solution
         based in best known solution.
         Solution must be set of nodes"""
@@ -207,7 +243,10 @@ class MaxCliqueProblem:
             def __len__(self):
                 return len(self.clique)
 
-        clique = Clique(set(self.objective_best_vals), self.G)
+        if clique_inp is None:
+            clique_inp = self.objective_best_vals
+
+        clique = Clique(set(clique_inp), self.G)
         assert self._is_best_vas_clique(), "ERROR"
         swap = ()
         for x in clique:
@@ -254,7 +293,8 @@ class MaxCliqueProblem:
 
         return ind_set_maximal
 
-    def __init__(self):
+    def __init__(self, inp):
+        self.INP = inp
         self._conf = False
         self.get_input()
         self.G = nx.Graph()
@@ -265,11 +305,13 @@ class MaxCliqueProblem:
         print("End conf model")
         self.cutted = 0
         self.time_elapsed = 0
+        self.is_timeout = False
 
-    def solve(self):
+    def solve(self, timeout=7200):
         # CP must be CPLEX model
         # inicialized for MaxClique
         # problem
+        self.timeout = timeout
         assert self._conf, "Configurate model first!"
         # Try to find heuristic solution
         self.init_heuristic()
@@ -278,13 +320,16 @@ class MaxCliqueProblem:
         self.local_search()
         print("Start to solve")
         #self.BnBMaxClique()
-        start_time = time.time()
+        # Limit solving on time
+        self.start_time = time.time()
         self.BnBMaxCliqueDFS()
-        self.time_elapsed = time.time() - start_time
+        self.time_elapsed = time.time() - self.start_time
+
 
     def get_input(self):
-        self.INP = ['c125.9.txt', 'keller4.txt', 'p_hat300_1.txt', 'brock200_2.txt'][0]
-        self.Edges = [list(map( int, str_.split()[1:3])) for str_ in open('input/'+self.INP).readlines() if str_[0] == 'e']
+
+        #self.INP = ['c125.9.txt', 'keller4.txt', 'p_hat300_1.txt', 'brock200_2.txt'][self.inp_no]
+        self.Edges = [list(map( int, str_.split()[1:3])) for str_ in open('input/DIMACS_all_ascii/'+self.INP).readlines() if str_[0] == 'e']
         self.Nodes = list(set([ y for x in self.Edges for y in x]))
         # Set variable to protect BnB metod from unconfigurate model
         self._conf = False
@@ -433,7 +478,16 @@ class MaxCliqueProblem:
         stack.append({"val": 0})
         cons = self.cp.number_of_constraints
         cons_before = 0
+        check_time_iterations = 1000
+        iteration_n = cycle(range(check_time_iterations + 1))
         while stack:
+
+            if next(iteration_n) == check_time_iterations:
+                if time.time() - self.start_time > self.timeout:
+                    print("TimeOut!")
+                    self.is_timeout = True
+                    break
+
             elem = stack.pop()
             # If we don't visit this node yet
             if elem["val"] == 0:
@@ -448,7 +502,7 @@ class MaxCliqueProblem:
                 # less than best int obj
                 if trunc_precisely(obj) <= self.objective_best:
                     self.cutted += 1
-                    print("Cut branch: ", self.cutted)
+                    #print("Cut branch: ", self.cutted)
                     continue
 
                 vals = sol.get_all_values()
@@ -457,13 +511,17 @@ class MaxCliqueProblem:
                 # If it's integer solution
                 if i == -1:
                     # If current solution better then previous
+                    vals_to_set = [self.Nodes[i] for i, val in enumerate(vals) if val == 1.0]
                     if self.objective_best < obj:
                         print("--------------------Find solution: ", obj, '--------------------')
                         # Remember it
                         self.objective_best = obj
-                        self.objective_best_vals = [self.Nodes[i] for i, val in enumerate(vals) if val == 1.0]
-                        print("Perform local search..")
-                        self.local_search()
+                        self.objective_best_vals = vals_to_set
+                    else:
+                        print("Another int solution")
+
+                    print("Perform local search..")
+                    self.local_search(vals_to_set)
 
                     continue
 
@@ -471,7 +529,7 @@ class MaxCliqueProblem:
                 i = self.Y[self.Nodes[i]]
                 elem['constr'] = self.cp.add_constraint_bath(i == 0)
 
-                print("Branch by ", i, " obj: ", obj)
+                #print("Branch by ", i, " obj: ", obj)
                 for ind in range(2):
                     stack.append(elem)
                     stack.append({"val": 0})
@@ -617,12 +675,33 @@ class MaxCliqueProblem:
                     # Remove constrain from the model
                     self.cp.remove_constraint(constr)
 
-                
+
+
+
+
+
+
+
 if __name__ == "__main__":
-    import pathlib
-    print(pathlib.Path(__file__).parent.absolute())
-    problem = MaxCliqueProblem()
-    problem.solve()
-    print(problem.objective_best)
-    print(problem.objective_best_vals)
-    print("Time elapsed: ", problem.time_elapsed)
+
+    for inp in Content_list:
+        with open("contest.txt", "a") as outp:
+            problem = MaxCliqueProblem(inp=inp)
+            # Setup signal to two hours
+            #signal.signal(signal.SIGALRM, handler)
+            #signal.alarm(7200)
+
+            # Set timeout on two hours
+            problem.solve(timeout=7200)
+
+            outp.write("Problem INP: " + str(problem.INP) + "\n")
+            outp.write("Obj: " + str(problem.objective_best) + "\n")
+            outp.write("Nodes: " + str(problem.objective_best_vals) + "\n")
+            outp.write("Time elapsed second: " + str(problem.time_elapsed ) + "\n")
+            outp.write("Time elapsed minutes: " + str(problem.time_elapsed / 60) + "\n")
+            if problem.is_timeout:
+                outp.write("Stopped by timer\n")
+            outp.write("\n")
+            print(problem.objective_best)
+            print(problem.objective_best_vals)
+            print("Time elapsed: ", problem.time_elapsed)

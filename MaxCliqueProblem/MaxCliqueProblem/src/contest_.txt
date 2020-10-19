@@ -1,0 +1,10 @@
+Problem INP: keller4.txtObj: 11Nodes: {1, 129, 67, 100, 98, 8, 74, 13, 22, 152, 120}Time elapsed: 1821.8023793697357
+
+Problem INP: p_hat300_1.txtObj: 8Nodes: {240, 208, 38, 250, 219, 268, 79, 159}Time elapsed: 4476.490579843521
+
+Problem INP: brock200_2.txtObj: 12Nodes: {70, 135, 105, 48, 145, 149, 55, 183, 120, 121, 27, 158}
+Time elapsed: 3939.6438541412354
+
+inp 'brock200_1.clq',
+solution 20
+timeout
