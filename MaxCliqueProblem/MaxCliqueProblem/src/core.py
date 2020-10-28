@@ -35,19 +35,21 @@ Content_list = \
  #       'gen200_p0.9_44.clq',
  #       'gen200_p0.9_55.clq',
 #        'san200_0.7_1.clq',
- #       'san200_0.7_2.clq',
+#        'san200_0.7_2.clq',
  #       'san200_0.9_1.clq',
- #       'san200_0.9_2.clq',
-#        'san200_0.9_3.clq',
- #       'sanr200_0.7.clq', Must run ones again
- #       'C125.9.clq',
-#       'keller4.clq',
-        #'brock200_1.clq',
-#        'brock200_2.clq',
-        'brock200_3.clq',
-        'brock200_4.clq',
-#        'p_hat300-1.clq',
-        'p_hat300-2.clq'
+ #       'san200_0.9_2.clq',	
+ #       'san200_0.9_3.clq',
+ #       'sanr200_0.7.clq', #Must run ones again
+      #  'C125.9.clq',
+      # 'keller4.clq',
+       # 'brock200_1.clq',
+        
+ #       'brock200_3.clq',
+  #      'brock200_4.clq',
+        'p_hat300-1.clq',
+   #     'p_hat300-2.clq',
+
+	'brock200_2.clq',
         ]
 
 
@@ -129,6 +131,8 @@ class MaxCliqueProblem:
                 self.objective_best = len(clique_cur)
                 self.objective_best_vals = clique_cur
                 print("-------------Find solution: ", self.objective_best, "-------------")
+                print("Perform local search..")
+                self.local_search()
 
     def colors_to_indep_set(self, coloring):
         '''Return dict, where
@@ -377,12 +381,12 @@ class MaxCliqueProblem:
 
         # Trying find best coloring in randomized way
         coloring_list = list()
-        for i in range(100):
+        for i in range(300):
             coloring_list.append(self.colors_to_indep_set(nx.algorithms.coloring.greedy_color(self.G,
                                                                                         strategy='random_sequential')))
-        coloring_list = sorted(coloring_list, key=lambda x: len(x.keys()))
+        #coloring_list = sorted(coloring_list, key=lambda x: len(x.keys()))
 
-        for elem in coloring_list[:5]:
+        for elem in coloring_list[:]:
             ind_set_maximal = self.maximal_ind_set_colors(elem)
             comps |= {self.cp.sum([self.Y[i] for i in x]) <= 1 for x in ind_set_maximal.values()}
 
@@ -394,6 +398,8 @@ class MaxCliqueProblem:
 
         # Allow BnB to work
         self._conf = True
+
+        print("Constraints count: ", self.cp.number_of_constraints)
 
     @staticmethod
     def get_node_index_to_branch(elems: np.array):
@@ -476,8 +482,8 @@ class MaxCliqueProblem:
         stack = deque()
 
         stack.append({"val": 0})
-        cons = self.cp.number_of_constraints
-        cons_before = 0
+        #cons = self.cp.number_of_constraints
+        #cons_before = 0
         check_time_iterations = 1000
         iteration_n = cycle(range(check_time_iterations + 1))
         while stack:
@@ -685,7 +691,7 @@ class MaxCliqueProblem:
 if __name__ == "__main__":
 
     for inp in Content_list:
-        with open("contest.txt", "a") as outp:
+        with open("contest_3.txt", "a") as outp:
             problem = MaxCliqueProblem(inp=inp)
             # Setup signal to two hours
             #signal.signal(signal.SIGALRM, handler)

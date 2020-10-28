@@ -14,3 +14,24 @@ Time elapsed second: 7200.017738580704
 Time elapsed minutes: 120.00029564301173
 Stopped by timer
 
+Problem INP: brock200_3.clq
+Obj: 14.0
+Nodes: [27, 107, 112, 120, 132, 135, 144, 155, 156, 162, 164, 174, 181, 198]
+Time elapsed second: 7222.53400683403
+Time elapsed minutes: 120.37556678056717
+Stopped by timer
+
+Problem INP: brock200_4.clq
+Obj: 15.0
+Nodes: [21, 25, 27, 32, 39, 46, 56, 65, 73, 84, 86, 92, 101, 161, 181]
+Time elapsed second: 7213.2480936050415
+Time elapsed minutes: 120.22080156008403
+Stopped by timer
+
+Problem INP: p_hat300-2.clq
+Obj: 24
+Nodes: {259, 4, 199, 75, 76, 205, 139, 273, 274, 149, 89, 219, 159, 38, 231, 296, 40, 44, 174, 48, 49, 56, 190, 255}
+Time elapsed second: 7209.584428310394
+Time elapsed minutes: 120.15974047183991
+Stopped by timer
+
