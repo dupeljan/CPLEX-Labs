@@ -102,7 +102,7 @@ class MaxCliqueProblem:
                 return False
         return True
 
-    @jit(forceobj=True)
+    #@jit(forceobj=True)
     def init_heuristic_static_set(self):
         """Trying to find best static set"""
         vertex_set = set(self.G.nodes)
@@ -125,14 +125,11 @@ class MaxCliqueProblem:
             for v in vertex_set:
                 neighbors = set(self.G.neighbors(v)) & vertex_set
                 k_upd = len(neighbors)
-                if k_upd >= k:
-                    # Compute m
-                    edge_sub = nx.subgraph(self.G, neighbors).size()
-                    m_upd = k_upd * (k_upd - 1) / 2 - edge_sub
-                    if k_upd > k or (k_upd == k and m_upd < m):
-                        k = k_upd
-                        m = m_upd
-                        v_res = v
+                m_upd = k_upd * (k_upd - 1) / 2 - nx.subgraph(self.G, neighbors).size()
+                if m_upd < m or (m_upd == m and k_upd > k):
+                    k = k_upd
+                    m = m_upd
+                    v_res = v
 
             assert v_res != -1, "ERROR"
             # Add new vertex to state set
@@ -880,7 +877,7 @@ if __name__ == "__main__":
 
     for inp in Content_list:
         with open("trash", "a") as outp:
-            problem = MaxCliqueProblem(inp=inp, mode="NON BNB")
+            problem = MaxCliqueProblem(inp=inp, mode="BNC")
             res = problem.init_heuristic_static_set()
             assert problem._is_state_set(res), "Error"
             res = problem.local_state_set_search(res)
