@@ -25,23 +25,23 @@ EPS = 1e-8
 Content_list = \
         [
         'c-fat200-1.clq',
-   #     'c-fat200-2.clq',
-   #     'c-fat200-5.clq',
-   #     'c-fat500-1.clq',
-  #      'c-fat500-10.clq',
-  #      'c-fat500-2.clq',
-  #      'c-fat500-5.clq',
-  #      'MANN_a9.clq',
-  #      'hamming6-2.clq',
- #       'hamming6-4.clq',
- #       'gen200_p0.9_44.clq',
- #       'gen200_p0.9_55.clq',
-#        'san200_0.7_1.clq',
-#        'san200_0.7_2.clq',
- #       'san200_0.9_1.clq',
+        'c-fat200-2.clq',
+        'c-fat200-5.clq',
+        'c-fat500-1.clq',
+        'c-fat500-10.clq',
+        'c-fat500-2.clq',
+        'c-fat500-5.clq',
+        'MANN_a9.clq',
+        'hamming6-2.clq',
+        'hamming6-4.clq',
+        'gen200_p0.9_44.clq',
+        'gen200_p0.9_55.clq',
+        'san200_0.7_1.clq',
+        'san200_0.7_2.clq',
+        'san200_0.9_1.clq',
  #       'san200_0.9_2.clq',	
  #       'san200_0.9_3.clq',
- #       'sanr200_0.7.clq', #Must run ones again
+ #       'sanr200_0.7.clq',
       #  'C125.9.clq',
       # 'keller4.clq',
        # 'brock200_1.clq',
@@ -102,7 +102,7 @@ class MaxCliqueProblem:
                 return False
         return True
 
-    #@jit(forceobj=True)
+    @jit(forceobj=True)
     def init_heuristic_static_set(self):
         """Trying to find best static set"""
         vertex_set = set(self.G.nodes)
@@ -117,7 +117,7 @@ class MaxCliqueProblem:
         while vertex_set:
             # Init k and m
             k = 0
-            m = len(vertex_set)
+            m = self.G.size()
             # Find v_res : k(v_res) = max
             # and among all such vertexes m(v_res) = min
             # Init v_res
@@ -131,7 +131,7 @@ class MaxCliqueProblem:
                     m = m_upd
                     v_res = v
 
-            assert v_res != -1, "ERROR"
+            assert v_res != -1, "Error, insert undefined vector"
             # Add new vertex to state set
             v_res = v_res
             res |= {v_res}
@@ -201,7 +201,7 @@ class MaxCliqueProblem:
         return comp
 
     #@jit
-    def local_state_set_search(self, state_set_inp=None):
+    def local_state_set_search(self, state_set_inp=None, weights=None):
         """Try to find better solution
         based on given"""
 
@@ -303,41 +303,63 @@ class MaxCliqueProblem:
             def __len__(self):
                 return len(self.state_set)
 
-        if state_set_inp is None:
-            state_set_inp = self.objective_best_vals
-
         state_set = StateSet(set(state_set_inp), self.G)
         assert self._is_state_set(state_set.state_set), "ERROR"
+
+        # Check is weighted ones
+        weighted = weights is not None
+        if weighted:
+            weights_map = {n: w for n, w in enumerate(weights)}
 
         for x in state_set:
 
             # Find candidates to add
             candidates = {n for n in set(self.G.neighbors(x))
                                                 if state_set.tau[n] == 1}
-            for c in candidates:
-                # TODO sort and use set instead of set
-                pair = candidates - set(self.G.neighbors(c)) - {c}
-                # If we can add 2 nodes instead of one
-                if pair:
-                    swap = (x, c, pair.pop())
-                    print("Improve solution by 1!")
+
+            # Choose best pair to swap
+            if weighted:
+                best = 0
+                for c in candidates:
+                    pair = candidates - set(self.G.neighbors(c)) - {c}
+                    if pair:
+                        pair = list(pair)
+                        maximal_pair = pair[np.argmax([weights_map[n] for n in pair])]
+                        score = weights_map[c] + weights_map[maximal_pair]
+                        if not best or best["score"] < score:
+                            best = dict(a=c, b=maximal_pair, score=score)
+
+                if not best:
+                    continue
+                if best["score"] > weights_map[x]:
+                    # Swap it!
+                    print("Improve solution by ", best["score"])
 
                     # Update state set
-                    state_set.add(set(swap[1:]))
-                    state_set.delete(swap[0])
-                    #self.objective_best_vals = state_set.state_set
+                    state_set.add(set([best["a"], best["b"]]))
+                    state_set.delete(x)
+
                     assert self._is_state_set(state_set.state_set), "State set is corupted!"
                     break
 
-        return state_set.state_set
+            else:
+                for c in candidates:
+                    # TODO sort and use set instead of set
+                    pair = candidates - set(self.G.neighbors(c)) - {c}
+                    # If we can add 2 nodes instead of one
+                    if pair:
 
-        '''
-        if len(state_set.clique) > self.objective_best:
-            print("---------------------------Find new solution: ", len(clique.clique),
-                                    " by local search---------------------------")
-            self.objective_best = len(clique.clique)
-            self.objective_best_vals = clique.clique
-        '''
+                        swap = (x, c, pair.pop())
+                        print("Improve solution by 1!")
+
+                        # Update state set
+                        state_set.add(set(swap[1:]))
+                        state_set.delete(swap[0])
+
+                        assert self._is_state_set(state_set.state_set), "State set is corupted!"
+                        break
+
+        return state_set.state_set
 
     #@jit
     def local_clique_search(self, clique_inp=None):
@@ -490,20 +512,85 @@ class MaxCliqueProblem:
 
         return ind_set_maximal
 
+    def separation(self, weights):
+        """Find max weighted independent set
+        by some heuristics
+        params:
+            weights - weights for independent set"""
+        # Greedy search:
+        res = set()
+        score = 0
+        # Sort weights
+        #values_sorted_list = sorted([(self.Nodes[n], w) for n, w in enumerate(weights)], key=lambda x: -x[1])
+        # Set consist of allowed values
+        #allowed = set(self.Nodes)
+
+        # Greedy filtering
+        # Put everything in priority queue
+        q = PriorityQueue()
+        q.heappify([(self.Nodes[n], -w) for n, w in enumerate(weights)])
+
+
+        while True:
+            # Take biggest element form queue
+            pop = q.pop_task_and_priority()
+            if pop is None:
+                break
+
+            # Add it to our solution
+            res |= {pop[1]}
+            score += pop[0]
+
+            # Remove all neighbors from queue
+            for n in self.G.neighbors(pop[1]):
+                print(type(n))
+                q.remove_task(n)
+        '''        
+        for n, val in values_sorted_list:
+            # If element is allowed to add to stable set
+            if n in allowed:
+                # Add note to heuristic solution and
+                res |= {n}
+                allowed -= set(self.G.neighbors(n)) | {n}
+                score += val
+        '''
+
+        # Trying to improve it by local search
+        res = self.local_state_set_search(state_set_inp=res, weights=weights)
+        return res
+
+    def corrupted_edges(self, values):
+        """Called if only all values is integer.
+        return list of node pairs from
+        the solution, which is no connected"""
+        nodes = {n for n, val in enumerate(values) if val == 1}
+        # Set of corrupt edges in clique
+        corrupt = {}
+        for n in nodes:
+            neighbors = list(self.G.neighbors(n))
+            for j in nodes - {n}:
+                if j not in neighbors:
+                    corrupt |= {(n, j)}
+
+        return  corrupt
+
+
     def __init__(self, inp, mode="BNB"):
         self.INP = inp
+        self.mode = mode
         self._conf = False
         self.get_input()
         # Create graph
         self.G = nx.Graph()
         self.G.add_edges_from(self.Edges)
-
         self.objective_best = 0
         self.objective_best_vals = 0
+        print("Start conf model")
         if mode == "BNB":
-            print("Start conf model")
-            self.configure_model()
-            print("End conf model")
+            self.configure_model_BnB()
+        elif mode == "BNC":
+            self.configure_model_BnC()
+        print("End conf model")
         self.cutted = 0
         self.time_elapsed = 0
         self.is_timeout = False
@@ -523,7 +610,10 @@ class MaxCliqueProblem:
         #self.BnBMaxClique()
         # Limit solving on time
         self.start_time = time.time()
-        self.BnBMaxCliqueDFS()
+        if self.mode == "BNB":
+            self.BnBMaxCliqueDFS()
+        elif self.mode == "BNC":
+            self.BnCMaxClique()
         self.time_elapsed = time.time() - self.start_time
 
     def get_input(self):
@@ -533,15 +623,24 @@ class MaxCliqueProblem:
         # Set variable to protect BnB metod from unconfigurate model
         self._conf = False
 
-    def configure_model(self):
+    def define_model_and_variables(self):
         self.cp = BatchedModel(name='Max_clique')
-
-        # Continious model vars 
+        # Continious model vars
         self.Y = {i: self.cp.continuous_var(name='y_{0}'.format(i)) for i in self.Nodes}
-
         # y constrains
-        self.Y_cons = {n: self.cp.add_constraint(self.Y[n] <= 1) for n in self.Nodes}
+        self.Y_cons = {n: self.cp.add_constraint_bath(self.Y[n] <= 1) for n in self.Nodes}
+        # Set objective
+        self.cp.maximize(self.cp.sum(self.Y))
 
+    def configure_model_BnC(self):
+        self.define_model_and_variables()
+        heurist_static_set = self.init_heuristic_static_set()
+        assert self._is_state_set(heurist_static_set), "Error, heuristic return connected set"
+        self.cp.add_constraint_bath(self.cp.sum([self.Y[n] for n in heurist_static_set]) <= 1)
+        self._conf = True
+
+    def configure_model_BnB(self):
+        self.define_model_and_variables()
         # Constrains for clique
         # Natural constraints
         bath = []
@@ -585,9 +684,6 @@ class MaxCliqueProblem:
         # Add constraints
         self.cp.add_constraints(comps)
 
-        # Set objective
-        self.cp.maximize(self.cp.sum(self.Y))
-
         # Allow BnB to work
         self._conf = True
 
@@ -607,6 +703,91 @@ class MaxCliqueProblem:
         if not np.any(candidates):
             return -1
         return np.argwhere(dists_to_near_int == np.min(candidates)).reshape(-1)[0]
+
+    def BnCMaxClique(self):
+        """Compute optimal solutuon
+         for max clique problem using
+         Branch and Cuts method
+         """
+
+        # Solve the problem
+        # in current state
+        sol = self.cp.solve()
+
+        # If there is no solution
+        if sol is None:
+            print("None solution found")
+            # Cut it
+            return
+
+        obj = sol.get_objective_value()
+        val = sol.get_all_values()
+
+        # If current branch upper bound not more
+        # than known objective
+        if trunc_precisely(obj) <= self.objective_best:
+            self.cutted += 1
+            print("Cut branch. Obj: ", obj, " Cutting count: ", self.cutted)
+            # Cut it
+            return
+
+        # Cutting
+        eps = 0.001
+        obj_pred = obj
+        cut_branch = False
+        while True:
+            sep = self.separation(val)
+            self.cp.add_constraint_bath(self.cp.sum(sep) <= 1)
+            self.cp.solve()
+
+            # If current branch worst than best solution- cut it
+            if trunc_precisely(self.cp.get_objective_value()) < self.objective_best:
+                cut_branch = True
+                break
+
+            # Stop iterations while difference between solutions is too little
+            if obj_pred - self.cp.get_objective_value() < eps:
+                break
+
+            # Change obj pred before next iteration
+            obj_pred = self.cp.get_objective_value()
+
+        if cut_branch:
+            return
+
+        # Get best branching value
+        i = MaxCliqueProblem.get_node_index_to_branch(val)
+        # If current solution better then previous
+        if i == -1:
+            corrupted = self.corrupted_edges(val)
+            if corrupted:
+                for c in corrupted:
+                    self.cp.add_constraint_bath(self.Y[c[0]] + self.Y[c[1]] <= 1)
+
+                return
+
+            if obj > self.objective_best:
+                print("--------------------Find solution: ", obj, '--------------------')
+                # Remember it
+                self.objective_best = obj
+                self.objective_best_vals = val
+                # Perform local clique search
+                self.local_clique_search()
+            return
+
+        # Else - branching
+
+        for ind in [0, 1]:
+            # Set i-th constraint to val
+            constr = self.cp.add_constraint_bath(self.Y[self.Nodes[i]] == ind)
+
+            print("Branch: " + str(constr), "obj: " + str(obj))
+
+            # Recursive call
+            self.BnCMaxClique()
+
+            # Remove constrain from the model
+            self.cp.remove_constraint_bath(constr)
 
     def BnBMaxClique(self):
         """Compute optimal solutuon
@@ -878,16 +1059,12 @@ if __name__ == "__main__":
     for inp in Content_list:
         with open("trash", "a") as outp:
             problem = MaxCliqueProblem(inp=inp, mode="BNC")
-            res = problem.init_heuristic_static_set()
-            assert problem._is_state_set(res), "Error"
-            res = problem.local_state_set_search(res)
-            print(res)
             # Setup signal to two hours
             #signal.signal(signal.SIGALRM, handler)
             #signal.alarm(7200)
 
             # Set timeout on two hours
-            #problem.solve(timeout=7200)
+            problem.solve(timeout=7200)
 
             outp.write("Problem INP: " + str(problem.INP) + "\n")
             outp.write("Obj: " + str(problem.objective_best) + "\n")
