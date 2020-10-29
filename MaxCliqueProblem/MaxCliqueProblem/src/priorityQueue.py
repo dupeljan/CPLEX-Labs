@@ -10,7 +10,7 @@ class PriorityQueue:
         self.entry_finder = {}               # mapping of tasks to entries
         self.REMOVED = '<removed-task>'      # placeholder for a removed task
 
-    def add_task(self,task, priority=0):
+    def add_task(self, task, priority=0):
         'Add a new task or update the priority of an existing task'
         if task in self.entry_finder:
             self.remove_task(task)
@@ -18,7 +18,7 @@ class PriorityQueue:
         self.entry_finder[task] = entry
         heappush(self.pq, entry)
 
-    def remove_task(self,task):
+    def remove_task(self, task):
         'Mark an existing task as REMOVED.  Raise KeyError if not found.'
         entry = self.entry_finder.pop(task)
         entry[-1] = self.REMOVED
@@ -32,8 +32,3 @@ class PriorityQueue:
                 return -priority, task
 
         return None
-        
-    def get_list_copy(self):
-        'Return copy of all task list'
-        return self.pq.copy()
-

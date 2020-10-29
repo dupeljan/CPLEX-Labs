@@ -7,7 +7,9 @@ from batchedModel import BatchedModel
 
 import threading
 
-from functools import  reduce
+from numba import jit
+
+from functools import reduce
 import docplex.mp
 #from docplex.mp.model import Model
 from itertools import combinations as comb, cycle
@@ -22,7 +24,7 @@ EPS = 1e-8
 
 Content_list = \
         [
-    #    'c-fat200-1.clq',
+        'c-fat200-1.clq',
    #     'c-fat200-2.clq',
    #     'c-fat200-5.clq',
    #     'c-fat500-1.clq',
@@ -93,7 +95,60 @@ class MaxCliqueProblem:
                     return False
         return True
 
-    def init_heuristic(self):
+    def _is_state_set(self, ind_set):
+        """Test if ind_set is actually state set"""
+        for i, j in comb(ind_set, 2):
+            if self.G.has_edge(i, j):
+                return False
+        return True
+
+    @jit(forceobj=True)
+    def init_heuristic_static_set(self):
+        """Trying to find best static set"""
+        vertex_set = set(self.G.nodes)
+        res = set()
+        # Estimation of difference with true results
+        est = 0
+        # Auxiliary values
+        # k(v) - neighbors count for vertex v
+        # m(v) - count of edges need to
+        # make subgraph consist of neighbors of v
+        # full connected
+        while vertex_set:
+            # Init k and m
+            k = 0
+            m = len(vertex_set)
+            # Find v_res : k(v_res) = max
+            # and among all such vertexes m(v_res) = min
+            # Init v_res
+            v_res = -1
+            for v in vertex_set:
+                neighbors = set(self.G.neighbors(v)) & vertex_set
+                k_upd = len(neighbors)
+                if k_upd >= k:
+                    # Compute m
+                    edge_sub = nx.subgraph(self.G, neighbors).size()
+                    m_upd = k_upd * (k_upd - 1) / 2 - edge_sub
+                    if k_upd > k or (k_upd == k and m_upd < m):
+                        k = k_upd
+                        m = m_upd
+                        v_res = v
+
+            assert v_res != -1, "ERROR"
+            # Add new vertex to state set
+            v_res = v_res
+            res |= {v_res}
+            # Remove all neighbors of v_res
+            # from vertex_set
+            vertex_set -= set(self.G.neighbors(v_res)) | {v_res}
+            # Update estimation
+            est += m
+
+        # Return founded state set
+        return res
+
+    @jit
+    def init_heuristic_clique(self):
         """Try to find max clique
         use heuristic neighbors method
         """
@@ -132,8 +187,9 @@ class MaxCliqueProblem:
                 self.objective_best_vals = clique_cur
                 print("-------------Find solution: ", self.objective_best, "-------------")
                 print("Perform local search..")
-                self.local_search()
+                self.local_clique_search()
 
+    @jit
     def colors_to_indep_set(self, coloring):
         '''Return dict, where
         key is collor and
@@ -147,7 +203,147 @@ class MaxCliqueProblem:
             comp[color] += [vert]
         return comp
 
-    def local_search(self, clique_inp= None):
+    #@jit
+    def local_state_set_search(self, state_set_inp=None):
+        """Try to find better solution
+        based on given"""
+
+        class StateSet:
+            """Incapsulate state set manipulations"""
+            def __init__(self, state_set, G):
+                # tau[n] =
+                # edge count from state_set neighbor n
+                # to state_set
+                self.G = G
+                self.tau = {n: 0 for n in self.G.nodes}
+                self.state_set = set(state_set)
+                self.state_set_list = []
+                self.neighbors = reduce(lambda x, y: x | y, [set(self.G.neighbors(x)) for x in self.state_set]) - \
+                                 self.state_set
+                self._initzialized = False
+                self.maximize_init()
+                self._initzialized = True
+                self.iter_index = 0
+
+
+            def delete(self, value):
+                """Delete value from the
+                state set and update neighbors"""
+                self.state_set -= {value}
+                self.tau[value] = len(self.state_set) - 1
+                # Delete neighbors which is connected
+                # only with value
+                neighbors = list(self.G.neighbors(value))
+                neighbors_value_only = {n for n in neighbors if self.tau[n] == 1}
+                self.neighbors -= set(neighbors_value_only)
+                # Update tau if already initialized
+                if self._initzialized:
+                    for n in neighbors:
+                        self.tau[n] -= 1
+                        # if tau is equal to zero
+                        # then we need to add this vertex to state set
+                        if not self.tau[n]:
+                            self.add({n})
+
+                # rewind iterations
+                self._rewind()
+
+            def add(self, values):
+                """Add values to state_set
+                and update neighbors and tau.
+                    values must be a set!"""
+                # Add values to list
+                self.state_set |= values
+                # Update neighbors
+                new_neighbors = reduce(lambda x, y: x | y, [set(self.G.neighbors(x)) for x in values])
+                self.neighbors |= new_neighbors
+                # Remove clique nodes from neighbors
+                self.neighbors -= self.state_set
+                # Update tau if already initialized
+                if self._initzialized:
+                    for n in new_neighbors:
+                        self.tau[n] += 1
+
+
+                # rewind iterations
+                self._rewind()
+
+            def maximize_init(self):
+                """Try to maximize current state set
+                just find appropriate node in the
+                list of the neighbors"""
+                repeat = True
+                while repeat:
+                    repeat = False
+
+                    for n in self.neighbors:
+                        b = len(set(self.G.neighbors(n)) & self.state_set)
+                        self.tau[n] = b
+                        # If we can add n to state set
+                        if not b:
+                            # add it and repeat from the begining
+                            self.add({n})
+                            repeat = True
+                            break
+
+            def _rewind(self):
+                """Start iteration from the
+                begining"""
+                self.state_set_list = list(self.state_set)
+                self.iter_index = 0
+
+            def __iter__(self):
+                self.state_set_list = list(self.state_set)
+                return self
+
+            def __next__(self):
+                try:
+                    self.iter_index += 1
+                    return self.state_set_list[self.iter_index - 1]
+                except IndexError:
+                    raise StopIteration
+
+            def __len__(self):
+                return len(self.state_set)
+
+        if state_set_inp is None:
+            state_set_inp = self.objective_best_vals
+
+        state_set = StateSet(set(state_set_inp), self.G)
+        assert self._is_state_set(state_set.state_set), "ERROR"
+
+        for x in state_set:
+
+            # Find candidates to add
+            candidates = {n for n in set(self.G.neighbors(x))
+                                                if state_set.tau[n] == 1}
+            for c in candidates:
+                # TODO sort and use set instead of set
+                pair = candidates - set(self.G.neighbors(c)) - {c}
+                # If we can add 2 nodes instead of one
+                if pair:
+                    swap = (x, c, pair.pop())
+                    print("Improve solution by 1!")
+
+                    # Update state set
+                    state_set.add(set(swap[1:]))
+                    state_set.delete(swap[0])
+                    #self.objective_best_vals = state_set.state_set
+                    assert self._is_state_set(state_set.state_set), "State set is corupted!"
+                    break
+
+        return state_set.state_set
+
+        '''
+        if len(state_set.clique) > self.objective_best:
+            print("---------------------------Find new solution: ", len(clique.clique),
+                                    " by local search---------------------------")
+            self.objective_best = len(clique.clique)
+            self.objective_best_vals = clique.clique
+        '''
+
+    #@jit
+    def local_clique_search(self, clique_inp=None):
         """Try to find better solution
         based in best known solution.
         Solution must be set of nodes"""
@@ -278,7 +474,7 @@ class MaxCliqueProblem:
             self.objective_best = len(clique.clique)
             self.objective_best_vals = clique.clique
 
-
+    @jit
     def maximal_ind_set_colors(self, ind_set):
         """Maximaze independent set
         for each color in ind_set
@@ -297,16 +493,20 @@ class MaxCliqueProblem:
 
         return ind_set_maximal
 
-    def __init__(self, inp):
+    def __init__(self, inp, mode="BNB"):
         self.INP = inp
         self._conf = False
         self.get_input()
+        # Create graph
         self.G = nx.Graph()
+        self.G.add_edges_from(self.Edges)
+
         self.objective_best = 0
         self.objective_best_vals = 0
-        print("Start conf model")
-        self.configure_model()
-        print("End conf model")
+        if mode == "BNB":
+            print("Start conf model")
+            self.configure_model()
+            print("End conf model")
         self.cutted = 0
         self.time_elapsed = 0
         self.is_timeout = False
@@ -318,10 +518,10 @@ class MaxCliqueProblem:
         self.timeout = timeout
         assert self._conf, "Configurate model first!"
         # Try to find heuristic solution
-        self.init_heuristic()
+        self.init_heuristic_clique()
         assert self._is_best_vas_clique(), "ERROR"
         print("Perform local search..")
-        self.local_search()
+        self.local_clique_search()
         print("Start to solve")
         #self.BnBMaxClique()
         # Limit solving on time
@@ -329,9 +529,7 @@ class MaxCliqueProblem:
         self.BnBMaxCliqueDFS()
         self.time_elapsed = time.time() - self.start_time
 
-
     def get_input(self):
-
         #self.INP = ['c125.9.txt', 'keller4.txt', 'p_hat300_1.txt', 'brock200_2.txt'][self.inp_no]
         self.Edges = [list(map( int, str_.split()[1:3])) for str_ in open('input/DIMACS_all_ascii/'+self.INP).readlines() if str_[0] == 'e']
         self.Nodes = list(set([ y for x in self.Edges for y in x]))
@@ -358,9 +556,6 @@ class MaxCliqueProblem:
 
         # Add constrains: nodes cant be in one clique
         # if you can color them in one color
-        # Create graph
-
-        self.G.add_edges_from(self.Edges)
 
         comps = set()
         # Color it
@@ -437,7 +632,7 @@ class MaxCliqueProblem:
 
         # If current branch upper bound not more
         # than known objective
-        if trunc_precisely(obj) <=  self.objective_best:
+        if trunc_precisely(obj) <= self.objective_best:
             self.cutted += 1
             print("Cut branch. Obj: ", obj, " Cutting count: ", self.cutted)
             # Cut it
@@ -527,7 +722,7 @@ class MaxCliqueProblem:
                         print("Another int solution")
 
                     print("Perform local search..")
-                    self.local_search(vals_to_set)
+                    self.local_clique_search(vals_to_set)
 
                     continue
 
@@ -681,24 +876,21 @@ class MaxCliqueProblem:
                     # Remove constrain from the model
                     self.cp.remove_constraint(constr)
 
-
-
-
-
-
-
-
 if __name__ == "__main__":
 
     for inp in Content_list:
-        with open("contest_3.txt", "a") as outp:
-            problem = MaxCliqueProblem(inp=inp)
+        with open("trash", "a") as outp:
+            problem = MaxCliqueProblem(inp=inp, mode="NON BNB")
+            res = problem.init_heuristic_static_set()
+            assert problem._is_state_set(res), "Error"
+            res = problem.local_state_set_search(res)
+            print(res)
             # Setup signal to two hours
             #signal.signal(signal.SIGALRM, handler)
             #signal.alarm(7200)
 
             # Set timeout on two hours
-            problem.solve(timeout=7200)
+            #problem.solve(timeout=7200)
 
             outp.write("Problem INP: " + str(problem.INP) + "\n")
             outp.write("Obj: " + str(problem.objective_best) + "\n")
