@@ -24,7 +24,7 @@ EPS = 1e-8
 
 Content_list = \
         [
-        #'c-fat200-1.clq',
+        'c-fat200-1.clq',
         #'c-fat200-2.clq',
         #'c-fat200-5.clq',
         #'c-fat500-1.clq',
@@ -532,13 +532,19 @@ class MaxCliqueProblem:
         q.heappify([[-w, self.Nodes[n]] for n, w in enumerate(weights)])
 
         # Get random first variable
-
+        weights = np.array(weights)
+        first, score = self.Nodes[np.random.choice(np.argwhere(weights == np.max(weights)).flatten())], np.max(weights)
+        q.remove_task(first)
 
         while True:
             # Take biggest element form queue
-            pop = q.pop_task_and_priority()
-            if pop is None:
-                break
+            if first:
+                pop = (score, first)
+                first = False
+            else:
+                pop = q.pop_task_and_priority()
+                if pop is None:
+                    break
 
             # Add it to our solution
             res |= {pop[1]}
