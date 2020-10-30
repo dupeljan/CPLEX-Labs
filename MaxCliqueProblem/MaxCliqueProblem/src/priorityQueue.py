@@ -1,4 +1,5 @@
 from heapq import heappush, heappop, heapify
+import numpy as np
 
 class PriorityQueue:
     """Implemets fast realisation
@@ -8,7 +9,7 @@ class PriorityQueue:
     def __init__(self):
         self.pq = []                         # list of entries arranged in a heap
         self.entry_finder = {}               # mapping of tasks to entries
-        self.REMOVED = '<removed-task>'      # placeholder for a removed task
+        self.REMOVED = np.inf      # placeholder for a removed task
 
     def add_task(self, task, priority=0):
         'Add a new task or update the priority of an existing task'
@@ -22,11 +23,10 @@ class PriorityQueue:
         """Heapify inp list
         params:
             list_: must contain two elements lists
-                first elem of each list is priority,
+                first elem of each list is minus priority,
                 second elem of each list is task"""
         self.pq = list_
         self.entry_finder = {entity[1]: entity for entity in list_}
-        #Needs fix here
         heapify(self.pq)
 
     def remove_task(self, task):

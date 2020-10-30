@@ -24,32 +24,33 @@ EPS = 1e-8
 
 Content_list = \
         [
-        'c-fat200-1.clq',
-        'c-fat200-2.clq',
-        'c-fat200-5.clq',
-        'c-fat500-1.clq',
-        'c-fat500-10.clq',
-        'c-fat500-2.clq',
-        'c-fat500-5.clq',
-        'MANN_a9.clq',
-        'hamming6-2.clq',
-        'hamming6-4.clq',
+        #'c-fat200-1.clq',
+        #'c-fat200-2.clq',
+        #'c-fat200-5.clq',
+        #'c-fat500-1.clq',
+        #'c-fat500-10.clq',
+        #'c-fat500-2.clq',
+        #'c-fat500-5.clq',
+        #'MANN_a9.clq',
+        #'hamming6-2.clq',
+        #'hamming6-4.clq',
+        'C125.9.clq',
         'gen200_p0.9_44.clq',
         'gen200_p0.9_55.clq',
         'san200_0.7_1.clq',
         'san200_0.7_2.clq',
         'san200_0.9_1.clq',
- #       'san200_0.9_2.clq',	
- #       'san200_0.9_3.clq',
- #       'sanr200_0.7.clq',
-      #  'C125.9.clq',
-      # 'keller4.clq',
-       # 'brock200_1.clq',
+        'san200_0.9_2.clq',
+        'san200_0.9_3.clq',
+        'sanr200_0.7.clq',
+
+       'keller4.clq',
+        'brock200_1.clq',
         
- #       'brock200_3.clq',
-  #      'brock200_4.clq',
+        'brock200_3.clq',
+        'brock200_4.clq',
         'p_hat300-1.clq',
-   #     'p_hat300-2.clq',
+       'p_hat300-2.clq',
 
 	'brock200_2.clq',
         ]
@@ -309,7 +310,7 @@ class MaxCliqueProblem:
         # Check is weighted ones
         weighted = weights is not None
         if weighted:
-            weights_map = {n: w for n, w in enumerate(weights)}
+            weights_map = {self.Nodes[n]: w for n, w in enumerate(weights)}
 
         for x in state_set:
 
@@ -528,7 +529,9 @@ class MaxCliqueProblem:
         # Greedy filtering
         # Put everything in priority queue
         q = PriorityQueue()
-        q.heappify([(self.Nodes[n], -w) for n, w in enumerate(weights)])
+        q.heappify([[-w, self.Nodes[n]] for n, w in enumerate(weights)])
+
+        # Get random first variable
 
 
         while True:
@@ -543,7 +546,6 @@ class MaxCliqueProblem:
 
             # Remove all neighbors from queue
             for n in self.G.neighbors(pop[1]):
-                print(type(n))
                 q.remove_task(n)
         '''        
         for n, val in values_sorted_list:
@@ -563,16 +565,21 @@ class MaxCliqueProblem:
         """Called if only all values is integer.
         return list of node pairs from
         the solution, which is no connected"""
-        nodes = {n for n, val in enumerate(values) if val == 1}
+        nodes = [self.Nodes[n] for n, val in enumerate(values) if val == 1]
         # Set of corrupt edges in clique
-        corrupt = {}
-        for n in nodes:
+        corrupt = set()
+        for i, j in comb(nodes, 2):
+            if not self.G.has_edge(i, j):
+                corrupt |= {(i, j)}
+        '''        
+        for i, n in enumerate(nodes):
             neighbors = list(self.G.neighbors(n))
-            for j in nodes - {n}:
+            for j in nodes[i+1:]:
                 if j not in neighbors:
                     corrupt |= {(n, j)}
+        '''
 
-        return  corrupt
+        return corrupt
 
 
     def __init__(self, inp, mode="BNB"):
@@ -735,22 +742,36 @@ class MaxCliqueProblem:
         eps = 0.001
         obj_pred = obj
         cut_branch = False
+        # How much iteration cycle should wait and add cutts
+        iter_without_changing = 10
+        i = 0
         while True:
             sep = self.separation(val)
-            self.cp.add_constraint_bath(self.cp.sum(sep) <= 1)
-            self.cp.solve()
+            self.cp.add_constraint_bath(self.cp.sum([self.Y[n] for n in sep]) <= 1)
+            sol = self.cp.solve()
 
+            if sol is None:
+                cut_branch
+                break
+
+            obj_new = sol.get_objective_value()
             # If current branch worst than best solution- cut it
-            if trunc_precisely(self.cp.get_objective_value()) < self.objective_best:
+            if trunc_precisely(obj_new) < self.objective_best:
                 cut_branch = True
                 break
 
             # Stop iterations while difference between solutions is too little
-            if obj_pred - self.cp.get_objective_value() < eps:
+            if obj_pred - obj_new < eps:
+                # i += 1
+                #if i == iter_without_changing:
+                #    break
                 break
 
             # Change obj pred before next iteration
-            obj_pred = self.cp.get_objective_value()
+            obj_pred = obj_new
+
+        obj = obj_pred
+        print("Done cutting, obj: ", obj)
 
         if cut_branch:
             return
@@ -761,16 +782,16 @@ class MaxCliqueProblem:
         if i == -1:
             corrupted = self.corrupted_edges(val)
             if corrupted:
-                for c in corrupted:
+                for c in list(corrupted)[:1000]:
                     self.cp.add_constraint_bath(self.Y[c[0]] + self.Y[c[1]] <= 1)
 
-                return
+                self.BnCMaxClique()
 
-            if obj > self.objective_best:
+            elif obj > self.objective_best:
                 print("--------------------Find solution: ", obj, '--------------------')
                 # Remember it
                 self.objective_best = obj
-                self.objective_best_vals = val
+                self.objective_best_vals = {self.Nodes[i] for i, n in enumerate(val) if n == 1}
                 # Perform local clique search
                 self.local_clique_search()
             return
