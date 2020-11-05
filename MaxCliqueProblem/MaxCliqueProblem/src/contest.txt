@@ -28,6 +28,7 @@ Time elapsed second: 7213.2480936050415
 Time elapsed minutes: 120.22080156008403
 Stopped by timer
 
+
 Problem INP: p_hat300-2.clq
 Obj: 24
 Nodes: {259, 4, 199, 75, 76, 205, 139, 273, 274, 149, 89, 219, 159, 38, 231, 296, 40, 44, 174, 48, 49, 56, 190, 255}

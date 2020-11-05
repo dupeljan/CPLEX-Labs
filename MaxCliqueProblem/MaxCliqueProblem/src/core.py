@@ -24,13 +24,13 @@ EPS = 1e-8
 
 Content_list = \
         [
-        'c-fat200-1.clq',
+        #'c-fat200-1.clq',
         #'c-fat200-2.clq',
         #'c-fat200-5.clq',
         #'c-fat500-1.clq',
-        #'c-fat500-10.clq',
-        #'c-fat500-2.clq',
-        #'c-fat500-5.clq',
+       # 'c-fat500-10.clq',
+       # 'c-fat500-2.clq',
+       # 'c-fat500-5.clq',
         #'MANN_a9.clq',
         #'hamming6-2.clq',
         #'hamming6-4.clq',
@@ -43,21 +43,14 @@ Content_list = \
         'san200_0.9_2.clq',
         'san200_0.9_3.clq',
         'sanr200_0.7.clq',
-
        'keller4.clq',
         'brock200_1.clq',
-        
         'brock200_3.clq',
         'brock200_4.clq',
         'p_hat300-1.clq',
        'p_hat300-2.clq',
-
 	'brock200_2.clq',
         ]
-
-
-
-
 
 
 def is_int(elem):
@@ -321,15 +314,23 @@ class MaxCliqueProblem:
             # Choose best pair to swap
             if weighted:
                 best = 0
+
                 for c in candidates:
                     pair = candidates - set(self.G.neighbors(c)) - {c}
                     if pair:
+                        # 1:2 weighted swap
                         pair = list(pair)
                         maximal_pair = pair[np.argmax([weights_map[n] for n in pair])]
                         score = weights_map[c] + weights_map[maximal_pair]
                         if not best or best["score"] < score:
-                            best = dict(a=c, b=maximal_pair, score=score)
-
+                            best = dict(elems={c, maximal_pair}, score=score)
+                    '''
+                    # 1:1 weighted swap
+                    else:
+                        
+                        if not best or best["score"] < weights_map[c]:
+                            best = dict(elems={c}, score=weights_map[c])
+                    '''
                 if not best:
                     continue
                 if best["score"] > weights_map[x]:
@@ -337,11 +338,10 @@ class MaxCliqueProblem:
                     print("Improve solution by ", best["score"])
 
                     # Update state set
-                    state_set.add(set([best["a"], best["b"]]))
+                    state_set.add(best["elems"])
                     state_set.delete(x)
 
                     assert self._is_state_set(state_set.state_set), "State set is corupted!"
-                    break
 
             else:
                 for c in candidates:
@@ -494,7 +494,7 @@ class MaxCliqueProblem:
             self.objective_best = len(clique.clique)
             self.objective_best_vals = clique.clique
 
-    @jit
+    #@jit
     def maximal_ind_set_colors(self, ind_set):
         """Maximaze independent set
         for each color in ind_set
@@ -513,11 +513,25 @@ class MaxCliqueProblem:
 
         return ind_set_maximal
 
+    def several_separation(self, weights, count= 3):
+        '''Call separation several times
+        hope to get better constraints
+        params:
+            weights - weights for independent set
+            count - number of separation call '''
+        res = set()
+        for i in range(count):
+            res |= {tuple(self.separation(weights))}
+        return res
+
     def separation(self, weights):
         """Find max weighted independent set
         by some heuristics
         params:
             weights - weights for independent set"""
+        # Setup weights as w / color
+        colors = nx.algorithms.coloring.greedy_color(self.G, strategy='random_sequential')
+        weights = [w / (colors[self.Nodes[i]] + 1) for i, w in enumerate(weights)]
         # Greedy search:
         res = set()
         score = 0
@@ -530,21 +544,23 @@ class MaxCliqueProblem:
         # Put everything in priority queue
         q = PriorityQueue()
         q.heappify([[-w, self.Nodes[n]] for n, w in enumerate(weights)])
-
+        '''
         # Get random first variable
         weights = np.array(weights)
         first, score = self.Nodes[np.random.choice(np.argwhere(weights == np.max(weights)).flatten())], np.max(weights)
         q.remove_task(first)
-
+        '''
         while True:
+            '''
             # Take biggest element form queue
             if first:
                 pop = (score, first)
                 first = False
             else:
-                pop = q.pop_task_and_priority()
-                if pop is None:
-                    break
+            '''
+            pop = q.pop_task_and_priority()
+            if pop is None:
+                break
 
             # Add it to our solution
             res |= {pop[1]}
@@ -607,6 +623,8 @@ class MaxCliqueProblem:
         self.cutted = 0
         self.time_elapsed = 0
         self.is_timeout = False
+        self.check_time_iterations = 10000
+        self.iteration_n = cycle(range(self.check_time_iterations + 1))
 
     def solve(self, timeout=7200):
         # CP must be CPLEX model
@@ -617,8 +635,6 @@ class MaxCliqueProblem:
         # Try to find heuristic solution
         self.init_heuristic_clique()
         assert self._is_best_vas_clique(), "ERROR"
-        print("Perform local search..")
-        self.local_clique_search()
         print("Start to solve")
         #self.BnBMaxClique()
         # Limit solving on time
@@ -631,8 +647,8 @@ class MaxCliqueProblem:
 
     def get_input(self):
         #self.INP = ['c125.9.txt', 'keller4.txt', 'p_hat300_1.txt', 'brock200_2.txt'][self.inp_no]
-        self.Edges = [list(map( int, str_.split()[1:3])) for str_ in open('input/DIMACS_all_ascii/'+self.INP).readlines() if str_[0] == 'e']
-        self.Nodes = list(set([ y for x in self.Edges for y in x]))
+        self.Edges = [list(map(int, str_.split()[1:3])) for str_ in open('input/DIMACS_all_ascii/'+self.INP).readlines() if str_[0] == 'e']
+        self.Nodes = list(set([y for x in self.Edges for y in x]))
         # Set variable to protect BnB metod from unconfigurate model
         self._conf = False
 
@@ -645,11 +661,43 @@ class MaxCliqueProblem:
         # Set objective
         self.cp.maximize(self.cp.sum(self.Y))
 
+    def add_coloring_constraints(self):
+        # Add constrains: nodes cant be in one clique
+        # if you can color them in one color
+
+        comps = set()
+        # Color it
+        for strategy in ['largest_first', 'smallest_last',
+                         'independent_set', 'connected_sequential_bfs',
+                         'connected_sequential_dfs', 'saturation_largest_first']:
+
+
+            coloring = nx.algorithms.coloring.greedy_color(self.G, strategy=strategy)
+            ind_set = self.colors_to_indep_set(coloring)
+            # Get it to maximal on including
+            ind_set_maximal = self.maximal_ind_set_colors(ind_set)
+            comps |= {self.cp.sum([self.Y[i] for i in x]) <= 1 for x in ind_set_maximal.values()}
+
+        # Trying find best coloring in randomized way
+        coloring_list = list()
+        for i in range(50):#300
+            coloring_list.append(self.colors_to_indep_set(nx.algorithms.coloring.greedy_color(self.G,
+                                                                                        strategy='random_sequential')))
+        coloring_list = sorted(coloring_list, key=lambda x: len(x.keys()))
+
+        for elem in coloring_list[:20]:#[:]
+            ind_set_maximal = self.maximal_ind_set_colors(elem)
+            comps |= {self.cp.sum([self.Y[i] for i in x]) <= 1 for x in ind_set_maximal.values()}
+
+        # Add constraints
+        self.cp.add_constraints(comps)
+
     def configure_model_BnC(self):
         self.define_model_and_variables()
         heurist_static_set = self.init_heuristic_static_set()
         assert self._is_state_set(heurist_static_set), "Error, heuristic return connected set"
         self.cp.add_constraint_bath(self.cp.sum([self.Y[n] for n in heurist_static_set]) <= 1)
+        self.add_coloring_constraints()
         self._conf = True
 
     def configure_model_BnB(self):
@@ -663,39 +711,7 @@ class MaxCliqueProblem:
 
         self.cp.add_constraints(bath)
 
-        # Add constrains: nodes cant be in one clique
-        # if you can color them in one color
-
-        comps = set()
-        # Color it
-        for strategy in ['largest_first', 'smallest_last',
-                         'independent_set', 'connected_sequential_bfs',
-                         'connected_sequential_dfs', 'saturation_largest_first']:
-
-
-            coloring = nx.algorithms.coloring.greedy_color(self.G, strategy=strategy)
-
-
-            ind_set = self.colors_to_indep_set(coloring)
-            # Get it to maximal on including
-
-            ind_set_maximal = self.maximal_ind_set_colors(ind_set)
-
-            comps |= {self.cp.sum([self.Y[i] for i in x]) <= 1 for x in ind_set_maximal.values()}
-
-        # Trying find best coloring in randomized way
-        coloring_list = list()
-        for i in range(300):
-            coloring_list.append(self.colors_to_indep_set(nx.algorithms.coloring.greedy_color(self.G,
-                                                                                        strategy='random_sequential')))
-        #coloring_list = sorted(coloring_list, key=lambda x: len(x.keys()))
-
-        for elem in coloring_list[:]:
-            ind_set_maximal = self.maximal_ind_set_colors(elem)
-            comps |= {self.cp.sum([self.Y[i] for i in x]) <= 1 for x in ind_set_maximal.values()}
-
-        # Add constraints
-        self.cp.add_constraints(comps)
+        self.add_coloring_constraints()
 
         # Allow BnB to work
         self._conf = True
@@ -723,13 +739,21 @@ class MaxCliqueProblem:
          Branch and Cuts method
          """
 
+        # Check timeout
+        if next(self.iteration_n) == self.check_time_iterations:
+            if time.time() - self.start_time > self.timeout:
+                print("TimeOut!")
+                self.is_timeout = True
+                self.iteration_n = cycle([self.check_time_iterations])
+                return
+
         # Solve the problem
         # in current state
         sol = self.cp.solve()
 
         # If there is no solution
         if sol is None:
-            print("None solution found")
+            #print("None solution found")
             # Cut it
             return
 
@@ -740,20 +764,21 @@ class MaxCliqueProblem:
         # than known objective
         if trunc_precisely(obj) <= self.objective_best:
             self.cutted += 1
-            print("Cut branch. Obj: ", obj, " Cutting count: ", self.cutted)
+            #print("Cut branch. Obj: ", obj, " Cutting count: ", self.cutted)
             # Cut it
             return
 
         # Cutting
-        eps = 0.001
+        eps = 0.01
         obj_pred = obj
         cut_branch = False
         # How much iteration cycle should wait and add cutts
         iter_without_changing = 10
         i = 0
         while True:
-            sep = self.separation(val)
-            self.cp.add_constraint_bath(self.cp.sum([self.Y[n] for n in sep]) <= 1)
+            several_sep = self.several_separation(val, count=10)
+            for sep in [s for s in several_sep if len(s) > 2]:
+                self.cp.add_constraint_bath(self.cp.sum([self.Y[n] for n in sep]) <= 1)
             sol = self.cp.solve()
 
             if sol is None:
@@ -777,7 +802,7 @@ class MaxCliqueProblem:
             obj_pred = obj_new
 
         obj = obj_pred
-        print("Done cutting, obj: ", obj)
+        #print("Done cutting, obj: ", obj)
 
         if cut_branch:
             return
@@ -788,7 +813,7 @@ class MaxCliqueProblem:
         if i == -1:
             corrupted = self.corrupted_edges(val)
             if corrupted:
-                for c in list(corrupted)[:1000]:
+                for c in list(corrupted)[:100]:
                     self.cp.add_constraint_bath(self.Y[c[0]] + self.Y[c[1]] <= 1)
 
                 self.BnCMaxClique()
@@ -808,7 +833,7 @@ class MaxCliqueProblem:
             # Set i-th constraint to val
             constr = self.cp.add_constraint_bath(self.Y[self.Nodes[i]] == ind)
 
-            print("Branch: " + str(constr), "obj: " + str(obj))
+            #print("Branch: " + str(constr), "obj: " + str(obj))
 
             # Recursive call
             self.BnCMaxClique()
@@ -1084,12 +1109,12 @@ class MaxCliqueProblem:
 if __name__ == "__main__":
 
     for inp in Content_list:
-        with open("trash", "a") as outp:
+        with open("contest_bnc.txt", "a") as outp:
+            print("Start to solve problem ", inp)
             problem = MaxCliqueProblem(inp=inp, mode="BNC")
             # Setup signal to two hours
             #signal.signal(signal.SIGALRM, handler)
             #signal.alarm(7200)
-
             # Set timeout on two hours
             problem.solve(timeout=7200)
 
