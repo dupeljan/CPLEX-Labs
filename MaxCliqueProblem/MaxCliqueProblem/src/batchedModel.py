@@ -22,9 +22,8 @@ class BatchedModel(Model):
         """Remove constraints from bath"""
         self._bath_remove_constr.append(constr)
 
-    def solve(self):
-        """Solve model adding all bathed
-        constraints before computing"""
+    def apply_batch(self):
+        """Apply all batched constraints"""
         if self._bath_add_constr:
             super().add_constraints(self._bath_add_constr)
             self._bath_add_constr = []
@@ -33,6 +32,10 @@ class BatchedModel(Model):
             super().remove_constraints(self._bath_remove_constr)
             self._bath_remove_constr = []
 
+    def solve(self):
+        """Solve model adding all bathed
+        constraints before computing"""
+        self.apply_batch()
         return super().solve()
 
 

@@ -35,21 +35,21 @@ Content_list = \
         #'hamming6-2.clq',
         #'hamming6-4.clq',
         'C125.9.clq',
-        'gen200_p0.9_44.clq',
-        'gen200_p0.9_55.clq',
-        'san200_0.7_1.clq',
-        'san200_0.7_2.clq',
-        'san200_0.9_1.clq',
-        'san200_0.9_2.clq',
-        'san200_0.9_3.clq',
-        'sanr200_0.7.clq',
-       'keller4.clq',
-        'brock200_1.clq',
-        'brock200_3.clq',
-        'brock200_4.clq',
-        'p_hat300-1.clq',
-       'p_hat300-2.clq',
-	'brock200_2.clq',
+        #'gen200_p0.9_44.clq', #!
+        #'gen200_p0.9_55.clq',
+        #'san200_0.7_1.clq',
+        #'san200_0.7_2.clq',
+        #'san200_0.9_1.clq',
+        #'san200_0.9_2.clq',
+        #'san200_0.9_3.clq', #!
+        #'sanr200_0.7.clq', #!
+       #'keller4.clq',
+        #'brock200_1.clq', #!
+        #'brock200_3.clq', #!
+        #'brock200_4.clq', #!
+        #'p_hat300-1.clq',
+       #'p_hat300-2.clq',
+	#'brock200_2.clq',
         ]
 
 
@@ -96,7 +96,7 @@ class MaxCliqueProblem:
                 return False
         return True
 
-    @jit(forceobj=True)
+    #@jit(forceobj=True)
     def init_heuristic_static_set(self):
         """Trying to find best static set"""
         vertex_set = set(self.G.nodes)
@@ -138,8 +138,8 @@ class MaxCliqueProblem:
         # Return founded state set
         return res
 
-    @jit
-    def init_heuristic_clique(self):
+    #@jit
+    def init_heuristic_clique(self, random=False):
         """Try to find max clique
         use heuristic neighbors method
         """
@@ -150,6 +150,9 @@ class MaxCliqueProblem:
             clique_cur = {v}
             clique_neighbors = set(self.G.neighbors(v))
 
+            if random:
+                colors = nx.algorithms.coloring.greedy_color(self.G,
+                                                strategy='random_sequential')
             while True:
                 # Compute neighbors interception
                 for c in clique_cur:
@@ -164,7 +167,8 @@ class MaxCliqueProblem:
                     break
 
                 # Find best candidate
-                candidates_deg = np.array(self.G.degree(clique_neighbors))
+                candidates_deg = np.array(self.G.degree(clique_neighbors)) if not random \
+                                                            else np.array([[n, colors[n]] for n in clique_neighbors])
                 i = np.argmax(candidates_deg[:, 1])
                 candidate_best = candidates_deg[i][0]
 
@@ -176,9 +180,9 @@ class MaxCliqueProblem:
             if len(clique_cur) >= self.objective_best:
                 self.objective_best = len(clique_cur)
                 self.objective_best_vals = clique_cur
-                print("-------------Find solution: ", self.objective_best, "-------------")
+                print("-------------Find new solution: ", self.objective_best, " -------------")
                 print("Perform local search..")
-                self.local_clique_search()
+                self.local_clique_search(clique_inp=clique_cur)
 
     @jit
     def colors_to_indep_set(self, coloring):
@@ -215,6 +219,7 @@ class MaxCliqueProblem:
                 self.maximize_init()
                 self._initzialized = True
                 self.iter_index = 0
+
 
 
             def delete(self, value):
@@ -479,7 +484,7 @@ class MaxCliqueProblem:
                 # If we can add 2 nodes instead of one
                 if pair:
                     swap = (x, c, pair.pop())
-                    print("Improve solution by 1!")
+                    #print("Improve solution by 1!")
                     # Update clique
 
                     clique.delete(swap[0])
@@ -619,11 +624,13 @@ class MaxCliqueProblem:
             self.configure_model_BnB()
         elif mode == "BNC":
             self.configure_model_BnC()
+            # Limit of constraints during bnc
+            self.constraint_limit = 1300
         print("End conf model")
         self.cutted = 0
         self.time_elapsed = 0
         self.is_timeout = False
-        self.check_time_iterations = 10000
+        self.check_time_iterations = 1000
         self.iteration_n = cycle(range(self.check_time_iterations + 1))
 
     def solve(self, timeout=7200):
@@ -634,6 +641,9 @@ class MaxCliqueProblem:
         assert self._conf, "Configurate model first!"
         # Try to find heuristic solution
         self.init_heuristic_clique()
+        random_init_heuristic_iter_count = 15
+        for i in range(random_init_heuristic_iter_count):
+            self.init_heuristic_clique(random=True)
         assert self._is_best_vas_clique(), "ERROR"
         print("Start to solve")
         #self.BnBMaxClique()
@@ -697,7 +707,7 @@ class MaxCliqueProblem:
         heurist_static_set = self.init_heuristic_static_set()
         assert self._is_state_set(heurist_static_set), "Error, heuristic return connected set"
         self.cp.add_constraint_bath(self.cp.sum([self.Y[n] for n in heurist_static_set]) <= 1)
-        self.add_coloring_constraints()
+        #self.add_coloring_constraints()
         self._conf = True
 
     def configure_model_BnB(self):
@@ -773,16 +783,21 @@ class MaxCliqueProblem:
         obj_pred = obj
         cut_branch = False
         # How much iteration cycle should wait and add cutts
-        iter_without_changing = 10
-        i = 0
+        #iter_without_changing = 10
+        #i = 0
         while True:
+            '''
+            # Stop separation if too much constraints
+            if self.cp.number_of_constraints > self.constraint_limit:
+                break
+            '''
             several_sep = self.several_separation(val, count=10)
             for sep in [s for s in several_sep if len(s) > 2]:
                 self.cp.add_constraint_bath(self.cp.sum([self.Y[n] for n in sep]) <= 1)
             sol = self.cp.solve()
 
             if sol is None:
-                cut_branch
+                cut_branch = True
                 break
 
             obj_new = sol.get_objective_value()
@@ -800,6 +815,22 @@ class MaxCliqueProblem:
 
             # Change obj pred before next iteration
             obj_pred = obj_new
+
+
+        # If there is lot of constraints
+        if self.cp.number_of_constraints > self.constraint_limit:
+            # Drop some constraints randomly
+            self.cp.apply_batch()
+            print("drop some constr from the model")
+            # Choose random indexes to drop
+            # Do not drop first N constraints which is x_i < 1
+            constr = [self.cp.get_constraint_by_index(id) for id in np.arange(len(self.Nodes), self.cp.number_of_constraints)]
+            constr = np.random.choice(np.array([x for x in constr if x is not None and 1 < x.lhs.size < 4]),
+                                      size=np.int(np.round(len(constr) / 3)))
+            # BUG HERE VVVVVVV
+            self.cp.remove_constraints(constr)
+
+            print("Now model has ", self.cp.number_of_constraints, "constraints")
 
         obj = obj_pred
         #print("Done cutting, obj: ", obj)
@@ -828,8 +859,13 @@ class MaxCliqueProblem:
             return
 
         # Else - branching
+        # Smart branching:
+        # use closest int first
+        br = [0, 1]
+        if val[i] > 0.5:
+            br = br[::-1]
 
-        for ind in [0, 1]:
+        for ind in br:
             # Set i-th constraint to val
             constr = self.cp.add_constraint_bath(self.Y[self.Nodes[i]] == ind)
 
@@ -1109,7 +1145,7 @@ class MaxCliqueProblem:
 if __name__ == "__main__":
 
     for inp in Content_list:
-        with open("contest_bnc.txt", "a") as outp:
+        with open("contest_bnc_iter2.txt", "a") as outp:
             print("Start to solve problem ", inp)
             problem = MaxCliqueProblem(inp=inp, mode="BNC")
             # Setup signal to two hours
