@@ -34,19 +34,19 @@ Content_list = \
         #'MANN_a9.clq',
         #'hamming6-2.clq',
         #'hamming6-4.clq',
-        'C125.9.clq',
-        #'gen200_p0.9_44.clq', #!
+        'C125.9.clq', #!
+        'gen200_p0.9_44.clq', #!
         #'gen200_p0.9_55.clq',
         #'san200_0.7_1.clq',
         #'san200_0.7_2.clq',
         #'san200_0.9_1.clq',
         #'san200_0.9_2.clq',
-        #'san200_0.9_3.clq', #!
-        #'sanr200_0.7.clq', #!
+        'san200_0.9_3.clq', #!
+        'sanr200_0.7.clq', #!
        #'keller4.clq',
-        #'brock200_1.clq', #!
-        #'brock200_3.clq', #!
-        #'brock200_4.clq', #!
+        'brock200_1.clq', #!
+        'brock200_3.clq', #!
+        'brock200_4.clq', #!
         #'p_hat300-1.clq',
        #'p_hat300-2.clq',
 	#'brock200_2.clq',
@@ -779,19 +779,19 @@ class MaxCliqueProblem:
             return
 
         # Cutting
-        eps = 0.01
+        eps = 0.1
         obj_pred = obj
         cut_branch = False
         # How much iteration cycle should wait and add cutts
         #iter_without_changing = 10
         #i = 0
         while True:
-            '''
+
             # Stop separation if too much constraints
             if self.cp.number_of_constraints > self.constraint_limit:
                 break
-            '''
-            several_sep = self.several_separation(val, count=10)
+
+            several_sep = self.several_separation(val, count=5)
             for sep in [s for s in several_sep if len(s) > 2]:
                 self.cp.add_constraint_bath(self.cp.sum([self.Y[n] for n in sep]) <= 1)
             sol = self.cp.solve()
@@ -816,6 +816,11 @@ class MaxCliqueProblem:
             # Change obj pred before next iteration
             obj_pred = obj_new
 
+        obj = obj_pred
+        #print("Done cutting, obj: ", obj)
+
+        if cut_branch:
+            return
 
         # If there is lot of constraints
         if self.cp.number_of_constraints > self.constraint_limit:
@@ -824,19 +829,27 @@ class MaxCliqueProblem:
             print("drop some constr from the model")
             # Choose random indexes to drop
             # Do not drop first N constraints which is x_i < 1
-            constr = [self.cp.get_constraint_by_index(id) for id in np.arange(len(self.Nodes), self.cp.number_of_constraints)]
-            constr = np.random.choice(np.array([x for x in constr if x is not None and 1 < x.lhs.size < 4]),
-                                      size=np.int(np.round(len(constr) / 3)))
-            # BUG HERE VVVVVVV
+            constr = [self.cp.get_constraint_by_index(id) for id in
+                      np.arange(len(self.Nodes), self.cp.number_of_constraints)]
+            constr = [x for x in constr if x is not None and 1 < x.lhs.size]
+
+            # TODO make it by priority queue
+            constr = sorted(constr, key=lambda x: x.slack_value, reverse=True)[:np.int(np.round(len(constr) / 1.5))]
+            '''
+            # Doesn't work because you can't compare constraints
+            q = PriorityQueue()
+            q.heappify([[-x.slack_value, x] for x in constr if x is not None and 1 < x.lhs.size])
+            for i in np.int(np.round(len(constr) / 3)):
+                val = q.pop_task_and_priority
+                if val is None:
+                    break
+                self.cp.add_constraint_bath(val[1])
+            '''
+            # constr = np.random.choice(np.array([x for x in constr if x is not None and 1 < x.lhs.size]),
+            #                         size=np.int(np.round(len(constr) / 3)))
             self.cp.remove_constraints(constr)
 
             print("Now model has ", self.cp.number_of_constraints, "constraints")
-
-        obj = obj_pred
-        #print("Done cutting, obj: ", obj)
-
-        if cut_branch:
-            return
 
         # Get best branching value
         i = MaxCliqueProblem.get_node_index_to_branch(val)
@@ -844,7 +857,7 @@ class MaxCliqueProblem:
         if i == -1:
             corrupted = self.corrupted_edges(val)
             if corrupted:
-                for c in list(corrupted)[:100]:
+                for c in list(corrupted)[:max(100, int(len(corrupted)/2))]:
                     self.cp.add_constraint_bath(self.Y[c[0]] + self.Y[c[1]] <= 1)
 
                 self.BnCMaxClique()
