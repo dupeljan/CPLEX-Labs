@@ -1,0 +1,69 @@
+Problem INP: brock200_3.clq
+Obj: 15.000000000000007
+Nodes: [12, 29, 36, 38, 58, 97, 98, 104, 118, 130, 144, 158, 173, 178]
+Time elapsed second: 4875.639991283417
+Time elapsed minutes: 81.26066652139028
+
+Problem INP: brock200_4.clq
+Obj: 16
+Nodes: {6, 72, 10, 85, 23, 24, 26, 92, 95, 40, 53, 183, 120, 59, 189, 62}
+Time elapsed second: 7283.523013830185
+Time elapsed minutes: 121.39205023050309
+Stopped by timer
+
+Problem INP: p_hat300-2.clq
+Obj: 25
+Nodes: {259, 4, 199, 75, 139, 76, 205, 79, 273, 274, 281, 26, 219, 159, 165, 38, 231, 40, 296, 174, 48, 49, 56, 190, 255}
+Time elapsed second: 1117.7621204853058
+Time elapsed minutes: 18.629368674755096
+
+Problem INP: san200_0.7_2.clq
+Obj: 18
+Nodes: {192, 4, 68, 6, 70, 199, 13, 15, 23, 26, 162, 164, 37, 111, 51, 179, 117, 180}
+Time elapsed second: 900.5704953670502
+Time elapsed minutes: 15.009508256117503
+
+Problem INP: san200_0.9_3.clq
+Obj: 35
+Nodes: {2, 135, 10, 139, 12, 141, 145, 25, 30, 31, 160, 161, 162, 164, 38, 167, 39, 171, 173, 53, 55, 56, 185, 57, 59, 191, 193, 76, 86, 88, 89, 91, 96, 107, 114}
+Time elapsed second: 7229.025702953339
+Time elapsed minutes: 120.48376171588897
+Stopped by timer
+
+Problem INP: sanr200_0.7.clq
+Obj: 18
+Nodes: {158, 96, 34, 162, 35, 102, 39, 104, 105, 41, 107, 42, 110, 109, 176, 55, 184, 124}
+Time elapsed second: 7268.4611620903015
+Time elapsed minutes: 121.1410193681717
+Stopped by timer
+
+Problem INP: C125.9.clq
+Obj: 34.0
+Nodes: [5, 9, 11, 14, 17, 19, 24, 25, 29, 31, 34, 44, 45, 49, 52, 54, 55, 65, 66, 67, 70, 77, 79, 80, 82, 85, 96, 98, 103, 104, 110, 117, 122, 125]
+Time elapsed second: 2863.155958890915
+Time elapsed minutes: 47.71926598151525
+
+Problem INP: keller4.clq
+Obj: 11
+Nodes: {1, 129, 67, 100, 98, 8, 74, 13, 22, 152, 120}
+Time elapsed second: 1344.4856317043304
+Time elapsed minutes: 22.40809386173884
+
+Problem INP: brock200_1.clq
+Obj: 20.0
+Nodes: [8, 18, 32, 46, 49, 57, 58, 59, 99, 104, 107, 109, 120, 130, 132, 138, 144, 175, 181, 199]
+Time elapsed second: 10819.524739980698
+Time elapsed minutes: 180.32541233301163
+Stopped by timer
+
+Problem INP: p_hat300-1.clq
+Obj: 8
+Nodes: {240, 208, 38, 250, 219, 268, 79, 159}
+Time elapsed second: 1815.050986289978
+Time elapsed minutes: 30.250849771499634
+
+Problem INP: brock200_2.clq
+Obj: 12
+Nodes: {70, 135, 105, 48, 145, 183, 149, 55, 120, 121, 27, 158}
+Time elapsed second: 2032.505005121231
+Time elapsed minutes: 33.87508341868718

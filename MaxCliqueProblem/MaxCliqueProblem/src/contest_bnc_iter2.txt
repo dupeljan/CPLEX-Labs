@@ -1,0 +1,72 @@
+Problem INP: C125.9.clq
+Obj: 34
+Nodes: {1, 2, 5, 7, 9, 11, 18, 19, 24, 25, 29, 31, 34, 44, 45, 48, 49, 54, 68, 70, 71, 77, 79, 80, 82, 85, 98, 101, 110, 115, 117, 121, 122, 125}
+Time elapsed second: 1335.9906058311462
+Time elapsed minutes: 22.26651009718577
+
+Problem INP: C125.9.clq
+Obj: 34
+Nodes: {5, 7, 9, 11, 17, 19, 25, 29, 31, 34, 44, 45, 49, 52, 54, 55, 65, 66, 67, 70, 77, 79, 80, 82, 85, 96, 98, 103, 104, 110, 114, 117, 122, 125}
+Time elapsed second: 965.5114853382111
+Time elapsed minutes: 16.091858088970184
+
+Problem INP: gen200_p0.9_44.clq
+Obj: 38.0
+Nodes: {1, 2, 3, 5, 136, 137, 142, 143, 19, 148, 149, 23, 152, 25, 155, 160, 161, 163, 41, 48, 49, 50, 176, 52, 177, 178, 187, 191, 193, 70, 199, 86, 96, 99, 104, 112, 117, 125}
+Time elapsed second: 7219.441357851028
+Time elapsed minutes: 120.32402263085048
+Stopped by timer
+
+Problem INP: san200_0.9_3.clq
+Obj: 36
+Nodes: {2, 131, 7, 135, 10, 139, 12, 140, 17, 21, 25, 30, 161, 162, 33, 164, 167, 40, 169, 173, 176, 177, 53, 54, 55, 187, 65, 76, 84, 86, 88, 89, 91, 95, 106, 117}
+Time elapsed second: 7202.141098499298
+Time elapsed minutes: 120.0356849749883
+Stopped by timer
+
+Problem INP: sanr200_0.7.clq
+Obj: 17
+Nodes: {96, 99, 4, 126, 199, 39, 11, 79, 175, 81, 17, 115, 20, 154, 123, 124, 158}
+Time elapsed second: 7213.1441061496735
+Time elapsed minutes: 120.2190684358279
+Stopped by timer
+
+Problem INP: gen200_p0.9_44.clq
+Obj: 44.0
+Nodes: {129, 132, 138, 13, 141, 146, 20, 149, 150, 151, 156, 29, 34, 38, 166, 40, 42, 170, 46, 47, 180, 186, 190, 65, 193, 67, 195, 72, 75, 81, 82, 84, 93, 94, 97, 100, 102, 105, 108, 117, 119, 120, 123, 127}
+Time elapsed second: 2474.0862431526184
+Time elapsed minutes: 41.23477071921031
+
+Problem INP: san200_0.9_3.clq
+Obj: 38
+Nodes: {132, 8, 142, 143, 14, 148, 20, 27, 159, 160, 166, 44, 173, 47, 49, 50, 188, 60, 189, 67, 68, 195, 197, 199, 198, 74, 78, 87, 89, 94, 100, 102, 107, 111, 117, 119, 120, 126}
+Time elapsed second: 7363.87034201622
+Time elapsed minutes: 122.731172366937
+Stopped by timer
+
+Problem INP: brock200_3.clq
+Obj: 15.000000000000007
+Nodes: {97, 98, 130, 38, 173, 178, 118, 29, 158}
+Time elapsed second: 5905.639640569687
+Time elapsed minutes: 98.42732734282812
+
+Problem INP: brock200_1.clq
+Obj: 21.0
+Nodes: {4, 132, 137, 138, 144, 26, 32, 41, 46, 175, 48, 180, 191, 199, 83, 100, 103, 104, 107, 120, 122}
+Time elapsed second: 7208.671633005142
+Time elapsed minutes: 120.14452721675237
+Stopped by timer
+
+Problem INP: brock200_3.clq
+Obj: 15
+Nodes: {97, 98, 130, 36, 38, 104, 12, 173, 144, 178, 84, 118, 58, 29, 158}
+Time elapsed second: 2031.314031124115
+Time elapsed minutes: 33.85523385206859
+
+Problem INP: brock200_1.clq
+Obj: 20
+Nodes: {65, 131, 3, 139, 79, 81, 145, 83, 85, 32, 35, 101, 103, 104, 40, 170, 175, 183, 59, 190}
+Time elapsed second: 7233.438994169235
+Time elapsed minutes: 120.55731656948726
+Stopped by timer
+
