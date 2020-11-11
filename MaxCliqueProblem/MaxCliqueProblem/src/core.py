@@ -17,11 +17,24 @@ from itertools import  count
 from collections import namedtuple, deque
 import networkx as nx
 import time
+import os
 from multiprocessing import Process
 
+#HYPERPARAMS
+BNC_CONSTR_LIMIT = 2000
+BNC_CORRUPTED_EDGES_PART = 2# denumenator
+BNC_KEEP_CONSTR_COUNT = 1000
+BNC_COUNT_OF_SEPARATION_ATTEMPTS = 10
+INIT_RANDOM_CLIQUE_ATTEMPTS = 60
 
+OUTPUT_RESULT = "contest_bnc_iter3.txt"
 EPS = 1e-8
 
+# List in order to compute
+# Legend:
+# #-! already compute but can optimize
+# #! not compute at all
+# #!!!!!!!!!!! hate it
 Content_list = \
         [
         #'c-fat200-1.clq',
@@ -34,8 +47,8 @@ Content_list = \
         #'MANN_a9.clq',
         #'hamming6-2.clq',
         #'hamming6-4.clq',
-        'C125.9.clq', #!
-        'gen200_p0.9_44.clq', #!
+        #'C125.9.clq', #-!
+        #'gen200_p0.9_44.clq', #-!
         #'gen200_p0.9_55.clq',
         #'san200_0.7_1.clq',
         #'san200_0.7_2.clq',
@@ -44,12 +57,12 @@ Content_list = \
         'san200_0.9_3.clq', #!
         'sanr200_0.7.clq', #!
        #'keller4.clq',
-        'brock200_1.clq', #!
-        'brock200_3.clq', #!
+        #'brock200_3.clq', #-!
+        'brock200_1.clq', #!!!!!!!!!!!!
         'brock200_4.clq', #!
         #'p_hat300-1.clq',
        #'p_hat300-2.clq',
-	#'brock200_2.clq',
+	    'brock200_2.clq', #-!
         ]
 
 
@@ -184,7 +197,7 @@ class MaxCliqueProblem:
                 print("Perform local search..")
                 self.local_clique_search(clique_inp=clique_cur)
 
-    @jit
+    #@jit
     def colors_to_indep_set(self, coloring):
         '''Return dict, where
         key is collor and
@@ -219,6 +232,7 @@ class MaxCliqueProblem:
                 self.maximize_init()
                 self._initzialized = True
                 self.iter_index = 0
+
 
 
 
@@ -310,6 +324,8 @@ class MaxCliqueProblem:
         if weighted:
             weights_map = {self.Nodes[n]: w for n, w in enumerate(weights)}
 
+        # Weight added after local search in total
+        improvement = 0
         for x in state_set:
 
             # Find candidates to add
@@ -341,7 +357,7 @@ class MaxCliqueProblem:
                 if best["score"] > weights_map[x]:
                     # Swap it!
                     print("Improve solution by ", best["score"])
-
+                    improvement += best["score"]
                     # Update state set
                     state_set.add(best["elems"])
                     state_set.delete(x)
@@ -365,6 +381,8 @@ class MaxCliqueProblem:
                         assert self._is_state_set(state_set.state_set), "State set is corupted!"
                         break
 
+        if weighted:
+            return {"state_set": state_set.state_set, "score": improvement}
         return state_set.state_set
 
     #@jit
@@ -518,7 +536,7 @@ class MaxCliqueProblem:
 
         return ind_set_maximal
 
-    def several_separation(self, weights, count= 3):
+    def several_separation(self, weights, count=3):
         '''Call separation several times
         hope to get better constraints
         params:
@@ -585,8 +603,12 @@ class MaxCliqueProblem:
         '''
 
         # Trying to improve it by local search
-        res = self.local_state_set_search(state_set_inp=res, weights=weights)
-        return res
+        # VVVV ENABLE LOCAL SEARCH FOR SEPARATION HERE VVVV
+        #local_search = self.local_state_set_search(state_set_inp=res, weights=weights)
+        #score += local_search["score"]
+        if score > 1:
+            return res
+        return {}
 
     def corrupted_edges(self, values):
         """Called if only all values is integer.
@@ -625,7 +647,8 @@ class MaxCliqueProblem:
         elif mode == "BNC":
             self.configure_model_BnC()
             # Limit of constraints during bnc
-            self.constraint_limit = 1300
+            self.constraint_limit = BNC_CONSTR_LIMIT
+            self.ground_constr = 0
         print("End conf model")
         self.cutted = 0
         self.time_elapsed = 0
@@ -641,7 +664,7 @@ class MaxCliqueProblem:
         assert self._conf, "Configurate model first!"
         # Try to find heuristic solution
         self.init_heuristic_clique()
-        random_init_heuristic_iter_count = 15
+        random_init_heuristic_iter_count = INIT_RANDOM_CLIQUE_ATTEMPTS
         for i in range(random_init_heuristic_iter_count):
             self.init_heuristic_clique(random=True)
         assert self._is_best_vas_clique(), "ERROR"
@@ -690,24 +713,25 @@ class MaxCliqueProblem:
 
         # Trying find best coloring in randomized way
         coloring_list = list()
-        for i in range(50):#300
+        for i in range(50):#300, 50
             coloring_list.append(self.colors_to_indep_set(nx.algorithms.coloring.greedy_color(self.G,
                                                                                         strategy='random_sequential')))
         coloring_list = sorted(coloring_list, key=lambda x: len(x.keys()))
 
-        for elem in coloring_list[:20]:#[:]
+        for elem in coloring_list[:13]:#[:], [:20]
             ind_set_maximal = self.maximal_ind_set_colors(elem)
             comps |= {self.cp.sum([self.Y[i] for i in x]) <= 1 for x in ind_set_maximal.values()}
 
         # Add constraints
         self.cp.add_constraints(comps)
+        print("Constraints count after coloring: ", self.cp.number_of_constraints)
 
     def configure_model_BnC(self):
         self.define_model_and_variables()
         heurist_static_set = self.init_heuristic_static_set()
         assert self._is_state_set(heurist_static_set), "Error, heuristic return connected set"
         self.cp.add_constraint_bath(self.cp.sum([self.Y[n] for n in heurist_static_set]) <= 1)
-        #self.add_coloring_constraints()
+        self.add_coloring_constraints()
         self._conf = True
 
     def configure_model_BnB(self):
@@ -779,32 +803,30 @@ class MaxCliqueProblem:
             return
 
         # Cutting
-        eps = 0.1
+        eps = 0.05
         obj_pred = obj
-        cut_branch = False
         # How much iteration cycle should wait and add cutts
         #iter_without_changing = 10
         #i = 0
         while True:
-
+            '''
             # Stop separation if too much constraints
             if self.cp.number_of_constraints > self.constraint_limit:
                 break
+            '''
 
-            several_sep = self.several_separation(val, count=5)
-            for sep in [s for s in several_sep if len(s) > 2]:
+            several_sep = self.several_separation(val, count=BNC_COUNT_OF_SEPARATION_ATTEMPTS)
+            for sep in [s for s in several_sep if len(s) > 1]:
                 self.cp.add_constraint_bath(self.cp.sum([self.Y[n] for n in sep]) <= 1)
             sol = self.cp.solve()
 
             if sol is None:
-                cut_branch = True
-                break
+                return
 
             obj_new = sol.get_objective_value()
             # If current branch worst than best solution- cut it
             if trunc_precisely(obj_new) < self.objective_best:
-                cut_branch = True
-                break
+                return
 
             # Stop iterations while difference between solutions is too little
             if obj_pred - obj_new < eps:
@@ -819,22 +841,22 @@ class MaxCliqueProblem:
         obj = obj_pred
         #print("Done cutting, obj: ", obj)
 
-        if cut_branch:
-            return
 
         # If there is lot of constraints
-        if self.cp.number_of_constraints > self.constraint_limit:
+        if self.cp.number_of_constraints > self.constraint_limit: #+ self.ground_constr:
             # Drop some constraints randomly
             self.cp.apply_batch()
             print("drop some constr from the model")
+
             # Choose random indexes to drop
             # Do not drop first N constraints which is x_i < 1
             constr = [self.cp.get_constraint_by_index(id) for id in
                       np.arange(len(self.Nodes), self.cp.number_of_constraints)]
             constr = [x for x in constr if x is not None and 1 < x.lhs.size]
-
+            self.ground_constr = self.cp.number_of_constraints - len(constr)
+            print("Ground constr count: ", self.ground_constr)
             # TODO make it by priority queue
-            constr = sorted(constr, key=lambda x: x.slack_value, reverse=True)[:np.int(np.round(len(constr) / 1.5))]
+            constr = sorted(constr, key=lambda x: x.slack_value)[BNC_KEEP_CONSTR_COUNT:]
             '''
             # Doesn't work because you can't compare constraints
             q = PriorityQueue()
@@ -857,7 +879,7 @@ class MaxCliqueProblem:
         if i == -1:
             corrupted = self.corrupted_edges(val)
             if corrupted:
-                for c in list(corrupted)[:max(100, int(len(corrupted)/2))]:
+                for c in list(corrupted)[:max(50, int(len(corrupted) / BNC_CORRUPTED_EDGES_PART))]:
                     self.cp.add_constraint_bath(self.Y[c[0]] + self.Y[c[1]] <= 1)
 
                 self.BnCMaxClique()
@@ -874,9 +896,7 @@ class MaxCliqueProblem:
         # Else - branching
         # Smart branching:
         # use closest int first
-        br = [0, 1]
-        if val[i] > 0.5:
-            br = br[::-1]
+        br = [0, 1] if val[i] < 0.5 else [1, 0]
 
         for ind in br:
             # Set i-th constraint to val
@@ -1158,7 +1178,7 @@ class MaxCliqueProblem:
 if __name__ == "__main__":
 
     for inp in Content_list:
-        with open("contest_bnc_iter2.txt", "a") as outp:
+        with open(OUTPUT_RESULT, "a") as outp:
             print("Start to solve problem ", inp)
             problem = MaxCliqueProblem(inp=inp, mode="BNC")
             # Setup signal to two hours
@@ -1178,3 +1198,5 @@ if __name__ == "__main__":
             print(problem.objective_best)
             print(problem.objective_best_vals)
             print("Time elapsed: ", problem.time_elapsed)
+            #os.system('spd-say -r -100 -p ' +
+            #          str(np.random.randint(-100, 100)) + ' "Papapapaaaaaaaaa, I\'m finished ' + inp + '"')
