@@ -7,7 +7,7 @@ from batchedModel import BatchedModel
 
 import threading
 
-from numba import jit
+#from numba import jit
 
 from functools import reduce
 import docplex.mp
@@ -81,6 +81,7 @@ def is_int_list(elems):
             res = False
             break
     return res
+
 
 def trunc_precisely(elem):
     """Trancate value in responce to
@@ -632,7 +633,8 @@ class MaxCliqueProblem:
 
 
     def __init__(self, inp, mode="BNB"):
-        self.INP = inp
+        assert mode in ["BNC", "BNB", "COLORING"], "Wrong mode"
+        self.INP = "DIMACS_all_ascii/" + inp if mode != "COLORING" else inp
         self.mode = mode
         self._conf = False
         self.get_input()
@@ -656,11 +658,16 @@ class MaxCliqueProblem:
         self.check_time_iterations = 1000
         self.iteration_n = cycle(range(self.check_time_iterations + 1))
 
+    def start_solve_with_timeout(self, callable, timeout):
+        self.timeout = timeout
+        self.start_time = time.time()
+        callable()
+        self.time_elapsed = time.time() - self.start_time
+
     def solve(self, timeout=7200):
         # CP must be CPLEX model
         # inicialized for MaxClique
         # problem
-        self.timeout = timeout
         assert self._conf, "Configurate model first!"
         # Try to find heuristic solution
         self.init_heuristic_clique()
@@ -671,23 +678,20 @@ class MaxCliqueProblem:
         print("Start to solve")
         #self.BnBMaxClique()
         # Limit solving on time
-        self.start_time = time.time()
         if self.mode == "BNB":
-            self.BnBMaxCliqueDFS()
+            callable = self.BnBMaxCliqueDFS
         elif self.mode == "BNC":
-            self.BnCMaxClique()
-        self.time_elapsed = time.time() - self.start_time
-
+            callable = self.BnCMaxClique
+        self.start_solve_with_timeout(callable, timeout)
     def get_input(self):
-        #self.INP = ['c125.9.txt', 'keller4.txt', 'p_hat300_1.txt', 'brock200_2.txt'][self.inp_no]
-        self.Edges = [list(map(int, str_.split()[1:3])) for str_ in open('input/DIMACS_all_ascii/'+self.INP).readlines() if str_[0] == 'e']
+        self.Edges = [list(map(int, str_.split()[1:3])) for str_ in open('input/'+self.INP).readlines() if str_[0] == 'e']
         self.Nodes = list(set([y for x in self.Edges for y in x]))
         # Set variable to protect BnB metod from unconfigurate model
         self._conf = False
 
     def define_model_and_variables(self):
         self.cp = BatchedModel(name='Max_clique')
-        # Continious model vars
+       # Continious model vars
         self.Y = {i: self.cp.continuous_var(name='y_{0}'.format(i)) for i in self.Nodes}
         # y constrains
         self.Y_cons = {n: self.cp.add_constraint_bath(self.Y[n] <= 1) for n in self.Nodes}
@@ -752,6 +756,15 @@ class MaxCliqueProblem:
 
         print("Constraints count: ", self.cp.number_of_constraints)
 
+    def check_timeout(self):
+        """Check if time for computing is over"""
+        if next(self.iteration_n) == self.check_time_iterations:
+            if time.time() - self.start_time > self.timeout:
+                print("TimeOut!")
+                self.is_timeout = True
+                self.iteration_n = cycle([self.check_time_iterations])
+                return True
+        return False
     @staticmethod
     def get_node_index_to_branch(elems: np.array):
         """Choose most apropriate 
@@ -774,13 +787,8 @@ class MaxCliqueProblem:
          """
 
         # Check timeout
-        if next(self.iteration_n) == self.check_time_iterations:
-            if time.time() - self.start_time > self.timeout:
-                print("TimeOut!")
-                self.is_timeout = True
-                self.iteration_n = cycle([self.check_time_iterations])
-                return
-
+        if self.check_timeout():
+            return
         # Solve the problem
         # in current state
         sol = self.cp.solve()
