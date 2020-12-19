@@ -198,6 +198,8 @@ class MaxCliqueProblem:
                 print("Perform local search..")
                 self.local_clique_search(clique_inp=clique_cur)
 
+            return clique_cur
+
     #@jit
     def colors_to_indep_set(self, coloring):
         '''Return dict, where
@@ -537,22 +539,24 @@ class MaxCliqueProblem:
 
         return ind_set_maximal
 
-    def several_separation(self, weights, count=3):
+    def several_separation(self, weights, count=3, local_search=False):
         '''Call separation several times
         hope to get better constraints
         params:
             weights - weights for independent set
-            count - number of separation call '''
+            count - number of separation call
+            local_search - use local_search if True'''
         res = set()
         for i in range(count):
-            res |= {tuple(self.separation(weights))}
+            res |= {tuple(self.separation(weights, local_search))}
         return res
 
-    def separation(self, weights):
+    def separation(self, weights, local_search=False):
         """Find max weighted independent set
         by some heuristics
         params:
-            weights - weights for independent set"""
+            weights - weights for independent set
+            local_search - use local_search if true"""
         # Setup weights as w / color
         colors = nx.algorithms.coloring.greedy_color(self.G, strategy='random_sequential')
         weights = [w / (colors[self.Nodes[i]] + 1) for i, w in enumerate(weights)]
@@ -605,8 +609,9 @@ class MaxCliqueProblem:
 
         # Trying to improve it by local search
         # VVVV ENABLE LOCAL SEARCH FOR SEPARATION HERE VVVV
-        #local_search = self.local_state_set_search(state_set_inp=res, weights=weights)
-        #score += local_search["score"]
+        if local_search:
+            local_search = self.local_state_set_search(state_set_inp=res, weights=weights)
+            score += local_search["score"]
         if score > 1:
             return res
         return {}
@@ -683,6 +688,7 @@ class MaxCliqueProblem:
         elif self.mode == "BNC":
             callable = self.BnCMaxClique
         self.start_solve_with_timeout(callable, timeout)
+
     def get_input(self):
         self.Edges = [list(map(int, str_.split()[1:3])) for str_ in open('input/'+self.INP).readlines() if str_[0] == 'e']
         self.Nodes = list(set([y for x in self.Edges for y in x]))
@@ -742,12 +748,12 @@ class MaxCliqueProblem:
         self.define_model_and_variables()
         # Constrains for clique
         # Natural constraints
-        bath = []
+        batch = []
         for i, j in comb(self.Nodes, 2):
             if [i, j] not in self.Edges and [j, i] not in self.Edges:
-                bath += [self.Y[i] + self.Y[j] <= 1]
+                batch += [self.Y[i] + self.Y[j] <= 1]
 
-        self.cp.add_constraints(bath)
+        self.cp.add_constraints(batch)
 
         self.add_coloring_constraints()
 
@@ -767,7 +773,7 @@ class MaxCliqueProblem:
         return False
     @staticmethod
     def get_node_index_to_branch(elems: np.array):
-        """Choose most apropriate 
+        """Choose most appropriate
         elem from elems to make 
         the branch.
         Return index of most appropriate element
