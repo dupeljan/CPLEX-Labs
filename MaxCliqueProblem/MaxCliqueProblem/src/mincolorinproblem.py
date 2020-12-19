@@ -8,6 +8,7 @@ from docplex.mp.model import Model
 import threading
 
 #from numba import jit
+import sys
 
 from functools import reduce
 import docplex.mp
@@ -25,8 +26,44 @@ INF = np.inf
 CLIQUE_HEURISTIC_ATTEMPTS = 20
 problem_list = \
 [
+    "david.col"
     "anna.col"
 ]
+
+class StateSetConstraints:
+    """Class manage order for
+    adding constraints"""
+    def __init__(self):
+        self._set = set()
+        self._list = list()
+
+    @property
+    def set_(self):
+        return self._set
+
+    @property
+    def list_(self):
+        return self._list.copy()
+
+    def add_constraints(self, constraints: set):
+        """Add constraints to the current
+        set state constraints instance
+        returns
+                constraints which instance haven't before"""
+        new_constraints = constraints - self._set
+        self._list += list(new_constraints)
+        self._set |= new_constraints
+        return new_constraints
+
+    def remove_constraints(self, constraints: set):
+        self._set -= constraints
+        self._list = [x for x in self._list if x not in constraints]
+
+    def __getitem__(self, item):
+        return self._list[item]
+
+    def __len__(self):
+        return len(self._list)
 
 class MinColoringProblem(MaxCliqueProblem):
     """Class for MinColoringProblem solving
@@ -35,12 +72,13 @@ class MinColoringProblem(MaxCliqueProblem):
 self.master_constraints += [constr]"""
     def __init__(self, inp):
         super().__init__("coloring/" + inp, "COLORING")
-        self.define_model_and_variables()
         self.best_coloring_val = len(self.Nodes)
         self.best_coloring_set = self.Nodes
-        self.forbiden_sets = set()
         self.master_contraints = dict()
+        self.forbiden_sets = set()
         self.branch_constraints = dict()
+        self.state_set_vars = StateSetConstraints()
+        self.define_model_and_variables()
         self._conf = True
 
     def get_variables(self, strategy='random_sequential'):
@@ -62,31 +100,29 @@ self.master_constraints += [constr]"""
 
     def reload_constraints(self):
         # Remove all constraints first
-        self.cp.remove_constraints([c for c in self.master_contraints])
+        self.cp.remove_constraints([c for c in self.master_contraints.values()])
         self.master_contraints = dict()
         # Recompute constraints
         for n in self.Nodes:
             contraint = []
-            for i, v in enumerate(self.V):
+            for i, v in enumerate(self.state_set_vars.list_):
                 if n in v:
-                    contraint += [self.X[i]]
+                    contraint += [self.X_mater_vars[i]]
             if contraint:
                 constraint = self.cp.sum(contraint) >= 1
                 self.master_contraints[n] = self.cp.add_constraint_bath(constraint)
-        # Add it to model
-        self.cp.add_constraint_bath(self.master_contraints)
 
     def add_variables(self, state_sets: set):
         """Add variables to model
         params: state_set: set - list of sets of nodes,
          which needs to be in model. state_sets must
          distinguish from all other variables"""
-        shift = len(self.V)
-        self.V |= state_sets
-        for i, state_set in enumerate(state_sets):
+        shift = len(self.state_set_vars)
+        new_state_sets = self.state_set_vars.add_constraints(state_sets)
+        for i, state_set in enumerate(new_state_sets):
             # Number in list for new var
-            j = shift + i + 1
-            self.X[j] = self.cp.continuous_var(name='x_{0}'.format(j))
+            j = shift + i
+            self.X_mater_vars[j] = self.cp.continuous_var(name='x_{0}'.format(j))
         self.reload_constraints()
 
     def define_model_and_variables(self, attempts=50):
@@ -94,18 +130,19 @@ self.master_constraints += [constr]"""
         # Add variables
         # Variables now is state sets
         # Initialize model by some colors set
-        self.V = set()
-        for _ in range(attempts):
-            self.V |= self.get_variables()
+        # Content of each state set
         # State set model vars
-        self.X = {i: self.cp.continuous_var(name='x_{0}'.format(i)) for i in range(len(self.V))}
+        self.X_mater_vars = dict()
+        for _ in range(attempts):
+            self.add_variables(self.get_variables())
+        # State set model vars
+        #self.X = {i: self.cp.continuous_var(name='x_{0}'.format(i)) for i in range(len(self.V))}
         # Nodes variables
-        self.N_var = {i: self.cp.continuous_var(name="n_{0}".format(i)) for i in self.Nodes}
+        #self.N_var = {i: self.cp.continuous_var(name="n_{0}".format(i)) for i in self.Nodes}
         # Load constraints
-        self.reload_constraints()
         # Set objective
         self.cp.apply_batch()
-        self.cp.minimize(self.cp.sum(self.X))
+        self.cp.minimize(self.cp.sum(self.X_mater_vars))
 
     def solve(self, timeout=7200):
         self.timeout = timeout
@@ -128,7 +165,7 @@ self.master_constraints += [constr]"""
                 [self.X[i] <= 0, self.X[i] >= 1]
                 or reversed one where
                 i = set_to_branch_index"""
-        _set = self.X[set_to_branch_index]
+        _set = self.X_mater_vars[set_to_branch_index]
         val = self.cp.solution.get_all_values()[set_to_branch_index]
         res = [_set <= 0, _set >= 1]
         return res if val < 0.5 else res[::-1]
@@ -154,24 +191,25 @@ self.master_constraints += [constr]"""
         if solver:
             # Define model and set timelimit
             m = BatchedModel()
-            m.parameters.timelimit = timelimit
+            if timelimit != INF:
+                m.parameters.timelimit = timelimit
 
             # Add variables
             Y = {n: m.binary_var(name="y_{0}".format(n)) for n in self.Nodes}
             # Add ground constraints
             for i, j in comb(self.Nodes, 2):
                 if [i, j] in self.Edges and [j, i] in self.Edges:
-                    m.add_constraint_bath([Y[i] + Y[j] <= 1])
+                    m.add_constraint_bath(Y[i] + Y[j] <= 1)
             # Add strong constraints
             for i in range(CLIQUE_HEURISTIC_ATTEMPTS):
                 clique = self.init_heuristic_clique(random=True)
-                m.add_constraint_bath(m.sum([Y[n] for n in clique] <= 1))
+                m.add_constraint_bath(m.sum([Y[n] for n in clique]) <= 1)
             # Add forbiden constraints
             for forbid_set in self.forbiden_sets:
                 m.add_constraint_bath(m.sum([Y[n] for n in forbid_set]) <= len(forbid_set) - 1)
             # Set objective
             # HAVE TO CHECK ORDER
-            m.maximize(self.cp.sum([weights[n]*Y[n] for n in self.Nodes]))
+            m.maximize(self.cp.sum([weights[i]*Y[n] for i, n in enumerate(self.Nodes)]))
             # Solve problem
             sol = m.solve()
             if sol is not None:
@@ -195,24 +233,24 @@ self.master_constraints += [constr]"""
                         attempts - given attempts"""
         while True:
             weights = self.cp.dual_values(self.master_contraints.values())
-            val_cur = self.cp.solution.get_all_values()
+            val_cur = self.cp.solution.get_objective_value()
             cols, upper_bound, = self.column_generator(solver=solver,
                                                        weights=weights,
                                                        timelimit=timelimit,
                                                        attempts=attempts)
 
             lower_bound = np.round(0.5 + np.sum(weights)/upper_bound)
-            if lower_bound > self.best_colorign_val:
+            if lower_bound > self.best_coloring_val:
                 return True
 
-            if not cols:
+            if not cols or cols == {()}:
                 return False
 
             self.add_variables(cols)
             sol = self.cp.solve()
             # Exit if solution doesn't change
             # significantly
-            if MinColoringProblem.is_tailing_off(sol.get_all_values(), val_cur):
+            if MinColoringProblem.is_tailing_off(sol.get_objective_value(), val_cur):
                 return False
 
     def BnPColoring(self):
@@ -236,14 +274,16 @@ self.master_constraints += [constr]"""
 
         # If we can't prune it
         # thus try to branch it
-        i = super().get_node_index_to_branch()
+        val = self.cp.solution.get_all_values()
+        i = super().get_node_index_to_branch(val)
 
         # If we can't branch
         if i == -1:
             # Prove it by solver
             self.column_gerator_loop(solver=True, timelimit=INF)
             # Reprove it's integerness
-            if super().get_node_index_to_branch() == -1:
+            val = self.cp.solution.get_all_values()
+            if super().get_node_index_to_branch(val) == -1:
                 sol = self.cp.solution
                 self.best_coloring_val = sol.get_objective_value()
                 self.best_coloring_set = sol.get_all_values()
@@ -263,8 +303,22 @@ self.master_constraints += [constr]"""
             if constr.rhs == 0:
                 self.forbiden_sets -= set(constr.lhs)
 
+    def output_statistic(self, outp):
+        outp.write("Problem INP: " + str(self.INP) + "\n")
+        outp.write("Obj: " + str(self.best_coloring_val) + "\n")
+        outp.write("Color sets: " + str([x for i, x in enumerate(self.state_set_vars.list_)
+                                         if self.best_coloring_set[i] != 0.]) + "\n")
+        outp.write("Time elapsed second: " + str(self.time_elapsed) + "\n")
+        outp.write("Time elapsed minutes: " + str(self.time_elapsed / 60) + "\n")
+        if self.is_timeout:
+            outp.write("Stopped by timer\n")
+        outp.write("\n")
+        #outp.write(str(len([x for i, x in enumerate(self.state_set_vars.list_)
+        #                                 if self.best_coloring_set[i] != 0.])))
 
 if __name__ == '__main__':
-    for problem in problem_list:
-        p = MinColoringProblem(problem)
+    for problem_name in problem_list:
+        p = MinColoringProblem(problem_name)
         p.solve()
+        p.output_statistic(sys.stdout)
+

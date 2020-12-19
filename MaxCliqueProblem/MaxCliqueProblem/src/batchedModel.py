@@ -5,7 +5,7 @@ class BatchedModel(Model):
     which can bath constraints and apply it
     only before solution computing"""
 
-    def __init__(self, name):
+    def __init__(self, name=None):
         """Remember constraints and
         apply in in the model only ones
         """
