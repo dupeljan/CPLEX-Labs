@@ -26,8 +26,12 @@ INF = np.inf
 CLIQUE_HEURISTIC_ATTEMPTS = 20
 problem_list = \
 [
-    "david.col"
-    "anna.col"
+    "queen6_6.col",
+    "myciel3.col",
+    "myciel4.col",
+    "myciel5.col",
+    "david.col",
+    "anna.col",
 ]
 
 class StateSetConstraints:
@@ -100,6 +104,7 @@ self.master_constraints += [constr]"""
 
     def reload_constraints(self):
         # Remove all constraints first
+        self.cp.apply_batch()
         self.cp.remove_constraints([c for c in self.master_contraints.values()])
         self.master_contraints = dict()
         # Recompute constraints
@@ -123,6 +128,8 @@ self.master_constraints += [constr]"""
             # Number in list for new var
             j = shift + i
             self.X_mater_vars[j] = self.cp.continuous_var(name='x_{0}'.format(j))
+        # Update target function
+        self.cp.minimize(self.cp.sum(self.X_mater_vars))
         self.reload_constraints()
 
     def define_model_and_variables(self, attempts=50):
@@ -167,7 +174,7 @@ self.master_constraints += [constr]"""
                 i = set_to_branch_index"""
         _set = self.X_mater_vars[set_to_branch_index]
         val = self.cp.solution.get_all_values()[set_to_branch_index]
-        res = [_set <= 0, _set >= 1]
+        res = [_set == 0, _set == 1]
         return res if val < 0.5 else res[::-1]
 
     def column_generator(self, weights, solver=False, timelimit=10, attempts=10):
@@ -197,9 +204,8 @@ self.master_constraints += [constr]"""
             # Add variables
             Y = {n: m.binary_var(name="y_{0}".format(n)) for n in self.Nodes}
             # Add ground constraints
-            for i, j in comb(self.Nodes, 2):
-                if [i, j] in self.Edges and [j, i] in self.Edges:
-                    m.add_constraint_bath(Y[i] + Y[j] <= 1)
+            for i, j in self.Edges:
+                m.add_constraint_bath(Y[i] + Y[j] <= 1)
             # Add strong constraints
             for i in range(CLIQUE_HEURISTIC_ATTEMPTS):
                 clique = self.init_heuristic_clique(random=True)
@@ -216,8 +222,9 @@ self.master_constraints += [constr]"""
                 obj = sol.get_objective_value()
                 if obj > 1.:
                     val = sol.get_all_values()
-                    return self.maximal_ind_set_colors(self.colors_to_indep_set(val)), val
-            return {}, INF
+                    return {tuple([n for i, n in enumerate(self.Nodes) if val[i] == 1.0])}, obj
+                return {()}, obj
+            return {()}, INF
         else:
             several_sep = self.several_separation(weights, count=attempts, local_search=True)
             return several_sep - self.forbiden_sets, INF
@@ -294,14 +301,14 @@ self.master_constraints += [constr]"""
         for constr in self.get_optimal_branch_list(i):
             # Add constraint to model
             self._add_branch_constraint(constr)
-            if constr.rhs == 0:
-                self.forbiden_sets |= set(constr.lhs)
+            if constr.rhs.constant == 0:
+                self.forbiden_sets |= set([self.state_set_vars[i]])
 
             self.BnPColoring()
 
             self._remove_branch_constraint(constr)
-            if constr.rhs == 0:
-                self.forbiden_sets -= set(constr.lhs)
+            if constr.rhs.constant == 0:
+                self.forbiden_sets -= set([self.state_set_vars[i]])
 
     def output_statistic(self, outp):
         outp.write("Problem INP: " + str(self.INP) + "\n")
@@ -318,6 +325,8 @@ self.master_constraints += [constr]"""
 
 if __name__ == '__main__':
     for problem_name in problem_list:
+        if problem_name != "david.col":
+            continue
         p = MinColoringProblem(problem_name)
         p.solve()
         p.output_statistic(sys.stdout)
