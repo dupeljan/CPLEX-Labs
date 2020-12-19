@@ -157,7 +157,7 @@ class MaxCliqueProblem:
         """Try to find max clique
         use heuristic neighbors method
         """
-        print("Start heuristic search...")
+        #print("Start heuristic search...")
         for v in self.Nodes:
             # Add current node to
             # current clique
@@ -194,8 +194,8 @@ class MaxCliqueProblem:
             if len(clique_cur) >= self.objective_best:
                 self.objective_best = len(clique_cur)
                 self.objective_best_vals = clique_cur
-                print("-------------Find new solution: ", self.objective_best, " -------------")
-                print("Perform local search..")
+                #print("-------------Find new solution: ", self.objective_best, " -------------")
+                #print("Perform local search..")
                 self.local_clique_search(clique_inp=clique_cur)
 
             return clique_cur
@@ -359,7 +359,7 @@ class MaxCliqueProblem:
                     continue
                 if best["score"] > weights_map[x]:
                     # Swap it!
-                    print("Improve solution by ", best["score"])
+                    #print("Improve solution by ", best["score"])
                     improvement += best["score"]
                     # Update state set
                     state_set.add(best["elems"])

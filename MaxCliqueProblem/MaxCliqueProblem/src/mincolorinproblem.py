@@ -20,17 +20,18 @@ import networkx as nx
 import time
 import os
 from core import MaxCliqueProblem
+from core import trunc_precisely
 
 EPS = 1e-1
 INF = np.inf
 CLIQUE_HEURISTIC_ATTEMPTS = 20
 problem_list = \
 [
-    "queen6_6.col",
+    #"queen6_6.col",
     "myciel3.col",
     "myciel4.col",
     "myciel5.col",
-    "david.col",
+    #"david.col",
     "anna.col",
 ]
 
@@ -292,8 +293,11 @@ self.master_constraints += [constr]"""
             val = self.cp.solution.get_all_values()
             if super().get_node_index_to_branch(val) == -1:
                 sol = self.cp.solution
-                self.best_coloring_val = sol.get_objective_value()
-                self.best_coloring_set = sol.get_all_values()
+                val = trunc_precisely(sol.get_objective_value())
+                if val < self.best_coloring_val:
+                    self.best_coloring_val = val
+                    self.best_coloring_set = sol.get_all_values()
+                    print("Found solution: ", self.best_coloring_val)
 
             return
 
@@ -313,7 +317,8 @@ self.master_constraints += [constr]"""
     def output_statistic(self, outp):
         outp.write("Problem INP: " + str(self.INP) + "\n")
         outp.write("Obj: " + str(self.best_coloring_val) + "\n")
-        outp.write("Color sets: " + str([x for i, x in enumerate(self.state_set_vars.list_)
+        outp.write("Color sets: " + str([x for i, x in
+                                         enumerate(self.state_set_vars.list_[:len(self.best_coloring_set)])
                                          if self.best_coloring_set[i] != 0.]) + "\n")
         outp.write("Time elapsed second: " + str(self.time_elapsed) + "\n")
         outp.write("Time elapsed minutes: " + str(self.time_elapsed / 60) + "\n")
@@ -324,10 +329,12 @@ self.master_constraints += [constr]"""
         #                                 if self.best_coloring_set[i] != 0.])))
 
 if __name__ == '__main__':
-    for problem_name in problem_list:
-        if problem_name != "david.col":
-            continue
-        p = MinColoringProblem(problem_name)
-        p.solve()
-        p.output_statistic(sys.stdout)
+    #sys.stdout = open("dump.txt", "w")
+    with open("min_coloring_results.txt", "w") as out:
+        for problem_name in problem_list:
+            p = MinColoringProblem(problem_name)
+            print("Start solving ", problem_name)
+            p.solve()
+            p.output_statistic(sys.stdout)
+            p.output_statistic(out)
 
