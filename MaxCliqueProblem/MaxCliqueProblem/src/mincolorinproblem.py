@@ -21,14 +21,17 @@ import time
 import os
 from core import MaxCliqueProblem
 from core import trunc_precisely
-
+# Hyperparameters
 EPS = 1e-1
 INF = np.inf
+INIT_COLORING_ATTEMPTS = 1# default 50 or 30
 CLIQUE_HEURISTIC_ATTEMPTS = 80
+SLAVE_SOLVER_TIMELIMIT = 10
+SLAVE_HEURISTIC_ATTEMPTS = 10
 problem_list = \
 [
-    "anna.col",
-    "david.col",
+    # "anna.col", +
+    # "david.col", +
     # "fpsol2.i.1.col",
     # "fpsol2.i.2.col",
     # "fpsol2.i.3.col",
@@ -61,7 +64,7 @@ problem_list = \
     # "mulsol.i.3.col",
     # "mulsol.i.4.col",
     # "mulsol.i.5.col",
-     "myciel2.col",
+     # "myciel2.col", +
      "myciel3.col",
      "myciel4.col",
      "myciel5.col",
@@ -152,10 +155,13 @@ self.master_constraints += [constr]"""
             clique = self.init_heuristic_clique(random=True)
             self.m.add_constraint_bath(self.m.sum([self.Y_slave[n] for n in clique]) <= 1)
 
+    def ind_set_to_max_sorted_ind_set(self, set_):
+        color_to_max_ind_set = self.maximal_ind_set_colors(set_)
+        return {tuple(sorted(x)) for x in color_to_max_ind_set.values()}
+
     def get_variables(self, strategy='random_sequential'):
         color = nx.algorithms.coloring.greedy_color(self.G, strategy=strategy)
-        color_to_max_ind_set = self.maximal_ind_set_colors(self.colors_to_indep_set(color))
-        return {tuple(sorted(x)) for x in color_to_max_ind_set.values()}
+        return self.ind_set_to_max_sorted_ind_set(self.colors_to_indep_set(color))
 
     def _add_branch_constraint(self, constraint):
         """Add branch constraint to self.cp model
@@ -199,7 +205,7 @@ self.master_constraints += [constr]"""
         self.cp.minimize(self.cp.sum(self.X_mater_vars))
         self.reload_constraints()
 
-    def define_model_and_variables(self, attempts=50):
+    def define_model_and_variables(self, attempts=INIT_COLORING_ATTEMPTS):
         self.cp = BatchedModel(name="Min_coloring")
         # Add variables
         # Variables now is state sets
@@ -245,6 +251,7 @@ self.master_constraints += [constr]"""
         return res if val < 0.5 else res[::-1]
 
     def column_generator(self, weights, solver=False, timelimit=10, attempts=10):
+
         """Try to find violated constraint in dual problem
         which is equal to variable search in master problem
         Problem is: Find heaviest state set with given
@@ -286,14 +293,17 @@ self.master_constraints += [constr]"""
                 obj = sol.get_objective_value()
                 if obj > 1.:
                     val = sol.get_all_values()
-                    return {tuple([n for i, n in enumerate(self.Nodes) if val[i] == 1.0])}, obj
+                    return self.ind_set_to_max_sorted_ind_set(
+                        {0: tuple([n for i, n in enumerate(self.Nodes) if val[i] == 1.0])}), obj
                 return {()}, obj
             return {()}, INF
         else:
             several_sep = self.several_separation(weights, count=attempts, local_search=True)
+            several_sep = set([tuple(sorted(x)) for x in several_sep])
             return several_sep - self.forbiden_sets, INF
 
-    def column_gerator_loop(self, solver=False, timelimit=10, attempts=10):
+    def column_gerator_loop(self, solver=False, timelimit=SLAVE_SOLVER_TIMELIMIT,
+                                                attempts=SLAVE_HEURISTIC_ATTEMPTS):
         """Trying to add some variables i.e. columns
          to prune computing branch
         params:
@@ -304,8 +314,6 @@ self.master_constraints += [constr]"""
                         attempts - given attempts"""
         while True:
             weights = self.cp.dual_values(self.master_contraints.values())
-            if not weights:
-                print("ah")
             assert weights, "Weights is empty!"
             val_cur = self.cp.solution.get_objective_value()
             cols, upper_bound, = self.column_generator(solver=solver,
@@ -333,9 +341,6 @@ self.master_constraints += [constr]"""
             return
 
         sol = self.cp.solve()
-        val = sol.get_all_values()
-        if not val:
-            print("ah")
         # Prune if there is no solution
         # on this branch
         if sol is None:
@@ -376,6 +381,7 @@ self.master_constraints += [constr]"""
             if constr.rhs.constant == 0:
                 self.forbiden_sets |= set([self.state_set_vars[i]])
 
+            print("Branch with constr: ", i)
             self.BnPColoring()
 
             self._remove_branch_constraint(constr)
@@ -398,7 +404,7 @@ self.master_constraints += [constr]"""
 
 if __name__ == '__main__':
     #sys.stdout = open("dump.txt", "w")
-    with open("min_coloring_results.txt", "w") as out:
+    with open("min_coloring_results_auto.txt", "w") as out:
         for problem_name in problem_list:
             print("Start configure", problem_name)
             p = MinColoringProblem(problem_name)
