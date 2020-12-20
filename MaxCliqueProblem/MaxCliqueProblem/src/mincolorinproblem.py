@@ -21,6 +21,7 @@ import time
 import os
 from core import MaxCliqueProblem
 from core import trunc_precisely
+
 # Hyperparameters
 EPS = 1e-1
 PRECISION = 8
@@ -195,9 +196,14 @@ self.master_constraints += [constr]"""
         """Add variables to model
         params: state_set: set - list of sets of nodes,
          which needs to be in model. state_sets must
-         distinguish from all other variables"""
+         distinguish from all other variables
+         returns:
+                    True if there is new variables
+                    else False"""
         shift = len(self.state_set_vars)
         new_state_sets = self.state_set_vars.add_constraints(state_sets)
+        if not new_state_sets:
+            return False
         for i, state_set in enumerate(new_state_sets):
             # Number in list for new var
             j = shift + i
@@ -205,6 +211,7 @@ self.master_constraints += [constr]"""
         # Update target function
         self.cp.minimize(self.cp.sum(self.X_mater_vars))
         self.reload_constraints()
+        return True
 
     def define_model_and_variables(self, attempts=INIT_COLORING_ATTEMPTS):
         self.cp = BatchedModel(name="Min_coloring")
@@ -329,7 +336,9 @@ self.master_constraints += [constr]"""
             if not cols or cols == {()}:
                 return False
 
-            self.add_variables(cols)
+            if not self.add_variables(cols):
+                assert not solver, "ATTANTION"
+                return False
             sol = self.cp.solve()
             # Exit if solution doesn't change
             # significantly
