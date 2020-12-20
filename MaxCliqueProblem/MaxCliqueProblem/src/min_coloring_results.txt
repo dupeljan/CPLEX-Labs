@@ -1,6 +1,0 @@
-Problem INP: coloring/myciel3.col
-Obj: 4.0
-Color sets: [(1, 3, 6, 8), (2, 4, 7, 9), (1, 5, 6, 10), (3, 4, 11)]
-Time elapsed second: 58.34308886528015
-Time elapsed minutes: 0.9723848144213358
-

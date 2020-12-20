@@ -157,6 +157,7 @@ class MaxCliqueProblem:
         """Try to find max clique
         use heuristic neighbors method
         """
+        local_best = set()
         #print("Start heuristic search...")
         for v in self.Nodes:
             # Add current node to
@@ -189,6 +190,10 @@ class MaxCliqueProblem:
                 # Add it to clique
                 clique_cur |= {candidate_best}
 
+            # Remember best for this call
+            if len(clique_cur) > len(local_best):
+                local_best = clique_cur.copy()
+
             # Keep new clique
             # if it's better than previous
             if len(clique_cur) >= self.objective_best:
@@ -198,7 +203,7 @@ class MaxCliqueProblem:
                 #print("Perform local search..")
                 self.local_clique_search(clique_inp=clique_cur)
 
-            return clique_cur
+        return local_best
 
     #@jit
     def colors_to_indep_set(self, coloring):
@@ -690,7 +695,10 @@ class MaxCliqueProblem:
         self.start_solve_with_timeout(callable, timeout)
 
     def get_input(self):
-        self.Edges = [list(map(int, str_.split()[1:3])) for str_ in open('input/'+self.INP).readlines() if str_[0] == 'e']
+        # Check zero loops
+        self.Edges = [x for x in [list(map(int, str_.split()[1:3]))
+                         for str_ in open('input/'+self.INP).readlines()
+                         if str_[0] == 'e'] if x[0] != x[1]]
         self.Nodes = list(set([y for x in self.Edges for y in x]))
         # Set variable to protect BnB metod from unconfigurate model
         self._conf = False

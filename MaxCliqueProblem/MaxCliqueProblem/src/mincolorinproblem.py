@@ -24,15 +24,67 @@ from core import trunc_precisely
 
 EPS = 1e-1
 INF = np.inf
-CLIQUE_HEURISTIC_ATTEMPTS = 20
+CLIQUE_HEURISTIC_ATTEMPTS = 80
 problem_list = \
 [
-    #"queen6_6.col",
-    "myciel3.col",
-    "myciel4.col",
-    "myciel5.col",
-    #"david.col",
     "anna.col",
+    "david.col",
+    # "fpsol2.i.1.col",
+    # "fpsol2.i.2.col",
+    # "fpsol2.i.3.col",
+    # "games120.col",
+    # "homer.col",
+    # "huck.col",
+    # "inithx.i.1.col",
+    # "inithx.i.2.col",
+    # "inithx.i.3.col",
+    # "jean.col",
+    # "le450_15a.col",
+    # "le450_15b.col",
+    # "le450_15c.col",
+    # "le450_15d.col",
+    # "le450_25a.col",
+    # "le450_25b.col",
+    # "le450_25c.col",
+    # "le450_25d.col",
+    # "le450_5a.col",
+    # "le450_5b.col",
+    # "le450_5c.col",
+    # "le450_5d.col",
+    # "miles1000.col",
+    # "miles1500.col",
+    # "miles250.col",
+    # "miles500.col",
+    # "miles750.col",
+    # "mulsol.i.1.col",
+    # "mulsol.i.2.col",
+    # "mulsol.i.3.col",
+    # "mulsol.i.4.col",
+    # "mulsol.i.5.col",
+     "myciel2.col",
+     "myciel3.col",
+     "myciel4.col",
+     "myciel5.col",
+     "myciel6.col",
+     "myciel7.col",
+    # "queen10_10.col",
+    # "queen11_11.col",
+    # "queen12_12.col",
+    # "queen13_13.col",
+    # "queen14_14.col",
+    # "queen15_15.col",
+    # "queen16_16.col",
+     "queen5_5.col",
+     "queen6_6.col",
+     "queen7_7.col",
+    # "queen8_12.col",
+     "queen8_8.col",
+    # "queen9_9.col",
+    # "school1.col",
+    # "school1_nsh.col",
+    # "zeroin.i.1.col",
+    # "zeroin.i.2.col",
+    # "zeroin.i.3.col",
 ]
 
 class StateSetConstraints:
@@ -84,7 +136,21 @@ self.master_constraints += [constr]"""
         self.branch_constraints = dict()
         self.state_set_vars = StateSetConstraints()
         self.define_model_and_variables()
+        self._precompute_for_slave_problem()
         self._conf = True
+
+    def _precompute_for_slave_problem(self):
+        """Precompute constraints for slave problem"""
+        self.m = BatchedModel()
+        # Add variables
+        self.Y_slave = {n: self.m.binary_var(name="y_{0}".format(n)) for n in self.Nodes}
+        # Add ground constraints
+        for i, j in self.Edges:
+            self.m.add_constraint_bath(self.Y_slave[i] + self.Y_slave[j] <= 1)
+        # Add strong constraints
+        for i in range(CLIQUE_HEURISTIC_ATTEMPTS):
+            clique = self.init_heuristic_clique(random=True)
+            self.m.add_constraint_bath(self.m.sum([self.Y_slave[n] for n in clique]) <= 1)
 
     def get_variables(self, strategy='random_sequential'):
         color = nx.algorithms.coloring.greedy_color(self.G, strategy=strategy)
@@ -198,27 +264,24 @@ self.master_constraints += [constr]"""
                 upper_bound - upper_bound for this task"""
         if solver:
             # Define model and set timelimit
-            m = BatchedModel()
             if timelimit != INF:
-                m.parameters.timelimit = timelimit
-
-            # Add variables
-            Y = {n: m.binary_var(name="y_{0}".format(n)) for n in self.Nodes}
-            # Add ground constraints
-            for i, j in self.Edges:
-                m.add_constraint_bath(Y[i] + Y[j] <= 1)
-            # Add strong constraints
-            for i in range(CLIQUE_HEURISTIC_ATTEMPTS):
-                clique = self.init_heuristic_clique(random=True)
-                m.add_constraint_bath(m.sum([Y[n] for n in clique]) <= 1)
+                self.m.parameters.timelimit = timelimit
+            else:
+                self.m.parameters.reset_all()
             # Add forbiden constraints
+            constr_forbid = []
             for forbid_set in self.forbiden_sets:
-                m.add_constraint_bath(m.sum([Y[n] for n in forbid_set]) <= len(forbid_set) - 1)
+                constr_forbid += [self.m.add_constraint_bath(
+                           self.m.sum([self.Y_slave[n] for n in forbid_set]) <= len(forbid_set) - 1)]
             # Set objective
             # HAVE TO CHECK ORDER
-            m.maximize(self.cp.sum([weights[i]*Y[n] for i, n in enumerate(self.Nodes)]))
+            self.m.maximize(self.cp.sum([weights[i]*self.Y_slave[n] for i, n in enumerate(self.Nodes)]))
             # Solve problem
-            sol = m.solve()
+            sol = self.m.solve()
+
+            # remove forbiden constraints
+            self.m.remove_constraints(constr_forbid)
+
             if sol is not None:
                 obj = sol.get_objective_value()
                 if obj > 1.:
@@ -241,6 +304,9 @@ self.master_constraints += [constr]"""
                         attempts - given attempts"""
         while True:
             weights = self.cp.dual_values(self.master_contraints.values())
+            if not weights:
+                print("ah")
+            assert weights, "Weights is empty!"
             val_cur = self.cp.solution.get_objective_value()
             cols, upper_bound, = self.column_generator(solver=solver,
                                                        weights=weights,
@@ -258,8 +324,8 @@ self.master_constraints += [constr]"""
             sol = self.cp.solve()
             # Exit if solution doesn't change
             # significantly
-            if MinColoringProblem.is_tailing_off(sol.get_objective_value(), val_cur):
-                return False
+            # if MinColoringProblem.is_tailing_off(sol.get_objective_value(), val_cur):
+            #     return False
 
     def BnPColoring(self):
         # Check timeout
@@ -267,7 +333,9 @@ self.master_constraints += [constr]"""
             return
 
         sol = self.cp.solve()
-
+        val = sol.get_all_values()
+        if not val:
+            print("ah")
         # Prune if there is no solution
         # on this branch
         if sol is None:
@@ -332,6 +400,7 @@ if __name__ == '__main__':
     #sys.stdout = open("dump.txt", "w")
     with open("min_coloring_results.txt", "w") as out:
         for problem_name in problem_list:
+            print("Start configure", problem_name)
             p = MinColoringProblem(problem_name)
             print("Start solving ", problem_name)
             p.solve()
