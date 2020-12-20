@@ -25,8 +25,8 @@ from core import trunc_precisely
 EPS = 1e-1
 PRECISION = 8
 INF = np.inf
-INIT_COLORING_ATTEMPTS = 1# default 50 or 30
-CLIQUE_HEURISTIC_ATTEMPTS = 80
+INIT_COLORING_ATTEMPTS = 80# default 50 or 30
+CLIQUE_HEURISTIC_ATTEMPTS = 10
 SLAVE_SOLVER_TIMELIMIT = 10
 SLAVE_HEURISTIC_ATTEMPTS = 10
 problem_list = \
@@ -55,11 +55,11 @@ problem_list = \
     # "le450_5b.col",
     # "le450_5c.col",
     # "le450_5d.col",
-    # "miles1000.col",
-    # "miles1500.col",
-    # "miles250.col",
-    # "miles500.col",
-    # "miles750.col",
+    # "miles1000.col", +
+    # "miles1500.col", +
+     # "miles250.col", ?
+    # "miles500.col", +
+    # "miles750.col", +
     # "mulsol.i.1.col",
     # "mulsol.i.2.col",
     # "mulsol.i.3.col",
