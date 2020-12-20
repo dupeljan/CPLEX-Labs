@@ -26,9 +26,9 @@ from core import trunc_precisely
 EPS = 1e-1
 PRECISION = 8
 INF = np.inf
-INIT_COLORING_ATTEMPTS = 80# default 50 or 30
-CLIQUE_HEURISTIC_ATTEMPTS = 10
-SLAVE_SOLVER_TIMELIMIT = 10
+INIT_COLORING_ATTEMPTS = 500# default 50 or 30
+CLIQUE_HEURISTIC_ATTEMPTS = 300
+SLAVE_SOLVER_TIMELIMIT = 1000000000000
 SLAVE_HEURISTIC_ATTEMPTS = 10
 problem_list = \
 [
@@ -58,7 +58,7 @@ problem_list = \
     # "le450_5d.col",
     # "miles1000.col", +
     # "miles1500.col", +
-     # "miles250.col", ?
+      "miles250.col",
     # "miles500.col", +
     # "miles750.col", +
     # "mulsol.i.1.col",
@@ -130,8 +130,7 @@ class StateSetConstraints:
 class MinColoringProblem(MaxCliqueProblem):
     """Class for MinColoringProblem solving
     by Branch and Price method.
-    WARNING: add constraints only by
-self.master_constraints += [constr]"""
+    """
     def __init__(self, inp):
         super().__init__("coloring/" + inp, "COLORING")
         self.best_coloring_val = len(self.Nodes)
@@ -142,6 +141,7 @@ self.master_constraints += [constr]"""
         self.state_set_vars = StateSetConstraints()
         self.define_model_and_variables()
         self._precompute_for_slave_problem()
+        self.history_branching = list()
         self._conf = True
 
     def _precompute_for_slave_problem(self):
@@ -161,21 +161,34 @@ self.master_constraints += [constr]"""
         color_to_max_ind_set = self.maximal_ind_set_colors(set_)
         return {tuple(sorted(x)) for x in color_to_max_ind_set.values()}
 
+    def update_best_value(self, color):
+        """Update best color val and
+        best val set by given color"""
+        ind_set = self.colors_to_indep_set(color)
+        if len(ind_set) < self.best_coloring_val:
+            self.best_coloring_val = len(ind_set)
+            self.best_coloring_set = list(ind_set.values())
+
     def get_variables(self, strategy='random_sequential'):
         color = nx.algorithms.coloring.greedy_color(self.G, strategy=strategy)
+        self.update_best_value(color)
         return self.ind_set_to_max_sorted_ind_set(self.colors_to_indep_set(color))
 
-    def _add_branch_constraint(self, constraint):
+    def _add_branch_constraint(self, constraint, i):
         """Add branch constraint to self.cp model
         params:
                 constraint - given constraint"""
+        assert i not in self.history_branching, "INF LOOP"
         self.cp.add_constraint_bath(constraint)
+        self.history_branching.append(i)
 
-    def _remove_branch_constraint(self, constraint):
+
+    def _remove_branch_constraint(self, constraint, i):
         """Remove branch constraint to self.cp model
         params:
                 constraint - given constraint"""
         self.cp.remove_constraint_bath(constraint)
+        self.history_branching.remove(i)
 
     def reload_constraints(self):
         # Remove all constraints first
@@ -209,6 +222,7 @@ self.master_constraints += [constr]"""
             j = shift + i
             self.X_mater_vars[j] = self.cp.continuous_var(name='x_{0}'.format(j))
         # Update target function
+        self.cp.remove_objective()
         self.cp.minimize(self.cp.sum(self.X_mater_vars))
         self.reload_constraints()
         return True
@@ -234,6 +248,7 @@ self.master_constraints += [constr]"""
 
     def solve(self, timeout=7200):
         self.timeout = timeout
+        print("Best heuristic val:", self.best_coloring_val)
         assert self._conf, "Configurate model first"
 
         self.start_solve_with_timeout(self.BnPColoring, timeout)
@@ -278,24 +293,21 @@ self.master_constraints += [constr]"""
                 constraints
                 upper_bound - upper_bound for this task"""
         if solver:
-            # Define model and set timelimit
+            # Set timelimit
             if timelimit != INF:
                 self.m.parameters.timelimit = timelimit
             else:
                 self.m.parameters.reset_all()
             # Add forbiden constraints
-            constr_forbid = []
-            for forbid_set in self.forbiden_sets:
-                constr_forbid += [self.m.add_constraint_bath(
-                           self.m.sum([self.Y_slave[n] for n in forbid_set]) <= len(forbid_set) - 1)]
             # Set objective
             # HAVE TO CHECK ORDER
+            self.m.remove_objective()
             self.m.maximize(self.cp.sum([weights[i]*self.Y_slave[n] for i, n in enumerate(self.Nodes)]))
             # Solve problem
             sol = self.m.solve()
 
             # remove forbiden constraints
-            self.m.remove_constraints(constr_forbid)
+            #self.m.remove_constraints(constr_forbid)
 
             if sol is not None:
                 obj = sol.get_objective_value()
@@ -328,17 +340,21 @@ self.master_constraints += [constr]"""
                                                        weights=weights,
                                                        timelimit=timelimit,
                                                        attempts=attempts)
-
-            lower_bound = np.round(0.5 + np.sum(weights)/upper_bound, PRECISION)
-            if lower_bound > self.best_coloring_val:
+            if solver:
+                assert not cols in self.forbiden_sets
+            lower_bound = np.round(0.5 + val_cur/upper_bound)
+            if lower_bound >= self.best_coloring_val:
                 return True
 
             if not cols or cols == {()}:
                 return False
 
             if not self.add_variables(cols):
-                assert not solver, "ATTANTION"
+                if solver:
+                    print("OH")
+                assert not solver
                 return False
+
             sol = self.cp.solve()
             # Exit if solution doesn't change
             # significantly
@@ -387,16 +403,19 @@ self.master_constraints += [constr]"""
         # Branch it
         for constr in self.get_optimal_branch_list(i):
             # Add constraint to model
-            self._add_branch_constraint(constr)
+            self._add_branch_constraint(constr, i)
             if constr.rhs.constant == 0:
                 self.forbiden_sets |= set([self.state_set_vars[i]])
+                forbid_set = self.state_set_vars[i]
+                forb_constr = self.m.add_constraint_bath(self.m.sum(
+                                        [self.Y_slave[n] for n in forbid_set]) <= len(forbid_set) - 1)
 
-            print("Branch with constr: ", i)
+            #print("Branch with constr: ", i)
             self.BnPColoring()
-
-            self._remove_branch_constraint(constr)
+            self._remove_branch_constraint(constr, i)
             if constr.rhs.constant == 0:
                 self.forbiden_sets -= set([self.state_set_vars[i]])
+                self.m.remove_constraint_bath(forb_constr)
 
     def output_statistic(self, outp):
         outp.write("Problem INP: " + str(self.INP) + "\n")
