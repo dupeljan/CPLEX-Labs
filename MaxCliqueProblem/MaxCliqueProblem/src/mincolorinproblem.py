@@ -23,6 +23,7 @@ from core import MaxCliqueProblem
 from core import trunc_precisely
 # Hyperparameters
 EPS = 1e-1
+PRECISION = 8
 INF = np.inf
 INIT_COLORING_ATTEMPTS = 1# default 50 or 30
 CLIQUE_HEURISTIC_ATTEMPTS = 80
@@ -65,7 +66,7 @@ problem_list = \
     # "mulsol.i.4.col",
     # "mulsol.i.5.col",
      # "myciel2.col", +
-     "myciel3.col",
+     # "myciel3.col", +
      "myciel4.col",
      "myciel5.col",
      "myciel6.col",
@@ -291,7 +292,7 @@ self.master_constraints += [constr]"""
 
             if sol is not None:
                 obj = sol.get_objective_value()
-                if obj > 1.:
+                if np.round(obj, PRECISION) > 1.:
                     val = sol.get_all_values()
                     return self.ind_set_to_max_sorted_ind_set(
                         {0: tuple([n for i, n in enumerate(self.Nodes) if val[i] == 1.0])}), obj
@@ -321,7 +322,7 @@ self.master_constraints += [constr]"""
                                                        timelimit=timelimit,
                                                        attempts=attempts)
 
-            lower_bound = np.round(0.5 + np.sum(weights)/upper_bound)
+            lower_bound = np.round(0.5 + np.sum(weights)/upper_bound, PRECISION)
             if lower_bound > self.best_coloring_val:
                 return True
 
