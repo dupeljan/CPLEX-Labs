@@ -544,7 +544,7 @@ class MaxCliqueProblem:
 
         return ind_set_maximal
 
-    def several_separation(self, weights, count=3, local_search=False):
+    def several_separation(self, weights, count=3, local_search=False, use_default_weights=False):
         '''Call separation several times
         hope to get better constraints
         params:
@@ -553,18 +553,19 @@ class MaxCliqueProblem:
             local_search - use local_search if True'''
         res = set()
         for i in range(count):
-            res |= {tuple(self.separation(weights, local_search))}
+            res |= {tuple(self.separation(weights, local_search, use_default_weights))}
         return res
 
-    def separation(self, weights, local_search=False):
+    def separation(self, weights, local_search=False, use_default_weights=False, random_sens=8e-2):
         """Find max weighted independent set
         by some heuristics
         params:
             weights - weights for independent set
             local_search - use local_search if true"""
-        # Setup weights as w / color
-        colors = nx.algorithms.coloring.greedy_color(self.G, strategy='random_sequential')
-        weights = [w / (colors[self.Nodes[i]] + 1) for i, w in enumerate(weights)]
+        if not use_default_weights:
+            # Setup weights as w / color
+            colors = nx.algorithms.coloring.greedy_color(self.G, strategy='random_sequential')
+            weights = [w / (colors[self.Nodes[i]] + 1) for i, w in enumerate(weights)]
         # Greedy search:
         res = set()
         score = 0
@@ -577,21 +578,23 @@ class MaxCliqueProblem:
         # Put everything in priority queue
         q = PriorityQueue()
         q.heappify([[-w, self.Nodes[n]] for n, w in enumerate(weights)])
-        '''
+
         # Get random first variable
         weights = np.array(weights)
-        first, score = self.Nodes[np.random.choice(np.argwhere(weights == np.max(weights)).flatten())], np.max(weights)
+        #first, first_score = self.Nodes[np.random.choice(np.argwhere(weights == np.max(weights)).flatten())], np.max(weights)
+        first = np.random.choice(np.argwhere(weights >= np.max(weights) - random_sens).flatten())
+        first_score = weights[first]
+        first = self.Nodes[first]
         q.remove_task(first)
-        '''
+
         while True:
-            '''
+
             # Take biggest element form queue
             if first:
-                pop = (score, first)
+                pop = (first_score, first)
                 first = False
             else:
-            '''
-            pop = q.pop_task_and_priority()
+                pop = q.pop_task_and_priority()
             if pop is None:
                 break
 
@@ -617,7 +620,10 @@ class MaxCliqueProblem:
         if local_search:
             local_search = self.local_state_set_search(state_set_inp=res, weights=weights)
             score += local_search["score"]
-        if score > 1:
+            res = local_search["state_set"]
+        if np.round(sum([weights[i] for i, n in enumerate(self.Nodes) if n in res]), 8) > 1.:
+            if tuple(sorted(list(res))) in self.state_set_vars._set and  tuple(sorted(list(res))) not in self.forbiden_sets:
+                print("OH mistake into separation")
             return res
         return {}
 

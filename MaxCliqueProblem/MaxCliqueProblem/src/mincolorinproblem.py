@@ -58,7 +58,7 @@ problem_list = \
     # "le450_5d.col",
     # "miles1000.col", +
     # "miles1500.col", +
-      "miles250.col",
+    # "miles250.col",
     # "miles500.col", +
     # "miles750.col", +
     # "mulsol.i.1.col",
@@ -193,7 +193,11 @@ class MinColoringProblem(MaxCliqueProblem):
     def reload_constraints(self):
         # Remove all constraints first
         self.cp.apply_batch()
+        assert len(self.master_contraints) == len(self.Nodes) \
+            or not self.master_contraints
+        constr_num = self.cp.number_of_constraints
         self.cp.remove_constraints([c for c in self.master_contraints.values()])
+        assert constr_num - self.cp.number_of_constraints in [0, len(self.Nodes)]
         self.master_contraints = dict()
         # Recompute constraints
         for n in self.Nodes:
@@ -201,11 +205,11 @@ class MinColoringProblem(MaxCliqueProblem):
             for i, v in enumerate(self.state_set_vars.list_):
                 if n in v:
                     contraint += [self.X_mater_vars[i]]
-            if contraint:
-                constraint = self.cp.sum(contraint) >= 1
-                self.master_contraints[n] = self.cp.add_constraint_bath(constraint)
+            assert contraint
+            constraint = self.cp.sum(contraint) >= 1
+            self.master_contraints[n] = self.cp.add_constraint_bath(constraint)
 
-    def add_variables(self, state_sets: set):
+    def add_variables(self, state_sets: set, can_be_duplicate=False):
         """Add variables to model
         params: state_set: set - list of sets of nodes,
          which needs to be in model. state_sets must
@@ -215,6 +219,11 @@ class MinColoringProblem(MaxCliqueProblem):
                     else False"""
         shift = len(self.state_set_vars)
         new_state_sets = self.state_set_vars.add_constraints(state_sets)
+
+        # Assert slave problem consistency
+        if not can_be_duplicate:
+            assert state_sets == new_state_sets
+
         if not new_state_sets:
             return False
         for i, state_set in enumerate(new_state_sets):
@@ -236,7 +245,7 @@ class MinColoringProblem(MaxCliqueProblem):
         # State set model vars
         self.X_mater_vars = dict()
         for _ in range(attempts):
-            self.add_variables(self.get_variables())
+            self.add_variables(self.get_variables(), can_be_duplicate=True)
         # State set model vars
         #self.X = {i: self.cp.continuous_var(name='x_{0}'.format(i)) for i in range(len(self.V))}
         # Nodes variables
@@ -283,7 +292,7 @@ class MinColoringProblem(MaxCliqueProblem):
                 weights: given weights
                 solver: bool - use solver if it's true
                                 else use heuristic
-                timelimit: int - timelimit for solver
+               timelimit: int - timelimit for solver
                 attempts: int - attempts to find solution for
                                 heuristic
         return:
@@ -310,7 +319,7 @@ class MinColoringProblem(MaxCliqueProblem):
             #self.m.remove_constraints(constr_forbid)
 
             if sol is not None:
-                obj = sol.get_objective_value()
+                obj = sol.solve_details.best_bound#get_objective_value()
                 if np.round(obj, PRECISION) > 1.:
                     val = sol.get_all_values()
                     return self.ind_set_to_max_sorted_ind_set(
@@ -318,9 +327,12 @@ class MinColoringProblem(MaxCliqueProblem):
                 return {()}, obj
             return {()}, INF
         else:
-            several_sep = self.several_separation(weights, count=attempts, local_search=True)
-            several_sep = set([tuple(sorted(x)) for x in several_sep])
-            return several_sep - self.forbiden_sets, INF
+            sep = self.separation(weights, local_search=True, use_default_weights=True)
+            if not sep:
+                return {()}, INF
+            sep = {tuple(sorted(sep))}
+            return sep - self.forbiden_sets, \
+                   sum([weights[i] for i, n in enumerate(self.Nodes) if n in sep.copy().pop()])
 
     def column_gerator_loop(self, solver=False, timelimit=SLAVE_SOLVER_TIMELIMIT,
                                                 attempts=SLAVE_HEURISTIC_ATTEMPTS):
@@ -344,6 +356,7 @@ class MinColoringProblem(MaxCliqueProblem):
                 assert not cols in self.forbiden_sets
             lower_bound = np.round(0.5 + val_cur/upper_bound)
             if lower_bound >= self.best_coloring_val:
+                print("Cut it!")
                 return True
 
             if not cols or cols == {()}:
@@ -432,6 +445,8 @@ class MinColoringProblem(MaxCliqueProblem):
         #                                 if self.best_coloring_set[i] != 0.])))
 
 if __name__ == '__main__':
+    # Setup recursive stack size
+    sys.setrecursionlimit(3000)
     #sys.stdout = open("dump.txt", "w")
     with open("min_coloring_results_auto.txt", "w") as out:
         for problem_name in problem_list:
