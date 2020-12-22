@@ -24,7 +24,7 @@ from core import trunc_precisely
 
 # Hyperparameters
 EPS = 1e-1
-PRECISION = 8
+PRECISION = 4
 INF = np.inf
 INIT_COLORING_ATTEMPTS = 500# default 50 or 30
 CLIQUE_HEURISTIC_ATTEMPTS = 300
@@ -68,7 +68,7 @@ problem_list = \
     # "mulsol.i.5.col",
      # "myciel2.col", +
      # "myciel3.col", +
-     "myciel4.col",
+     # "myciel4.col",
      "myciel5.col",
      "myciel6.col",
      "myciel7.col",
@@ -155,7 +155,8 @@ class MinColoringProblem(MaxCliqueProblem):
         # Add strong constraints
         for i in range(CLIQUE_HEURISTIC_ATTEMPTS):
             clique = self.init_heuristic_clique(random=True)
-            self.m.add_constraint_bath(self.m.sum([self.Y_slave[n] for n in clique]) <= 1)
+            if len(clique) > 2:
+                self.m.add_constraint_bath(self.m.sum([self.Y_slave[n] for n in clique]) <= 1)
 
     def ind_set_to_max_sorted_ind_set(self, set_):
         color_to_max_ind_set = self.maximal_ind_set_colors(set_)
@@ -328,10 +329,10 @@ class MinColoringProblem(MaxCliqueProblem):
             return {()}, INF
         else:
             sep = self.separation(weights, local_search=True, use_default_weights=True)
+            sep = {tuple(sorted(sep))} - self.forbiden_sets
             if not sep:
                 return {()}, INF
-            sep = {tuple(sorted(sep))}
-            return sep - self.forbiden_sets, \
+            return sep, \
                    sum([weights[i] for i, n in enumerate(self.Nodes) if n in sep.copy().pop()])
 
     def column_gerator_loop(self, solver=False, timelimit=SLAVE_SOLVER_TIMELIMIT,
@@ -420,7 +421,7 @@ class MinColoringProblem(MaxCliqueProblem):
             if constr.rhs.constant == 0:
                 self.forbiden_sets |= set([self.state_set_vars[i]])
                 forbid_set = self.state_set_vars[i]
-                forb_constr = self.m.add_constraint_bath(self.m.sum(
+                forb_constr = self.m.add_constraint(self.m.sum(
                                         [self.Y_slave[n] for n in forbid_set]) <= len(forbid_set) - 1)
 
             #print("Branch with constr: ", i)
@@ -428,7 +429,7 @@ class MinColoringProblem(MaxCliqueProblem):
             self._remove_branch_constraint(constr, i)
             if constr.rhs.constant == 0:
                 self.forbiden_sets -= set([self.state_set_vars[i]])
-                self.m.remove_constraint_bath(forb_constr)
+                self.m.remove_constraint(forb_constr)
 
     def output_statistic(self, outp):
         outp.write("Problem INP: " + str(self.INP) + "\n")
