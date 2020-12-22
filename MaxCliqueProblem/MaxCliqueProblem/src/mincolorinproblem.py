@@ -26,8 +26,8 @@ from core import trunc_precisely
 EPS = 1e-1
 PRECISION = 4
 INF = np.inf
-INIT_COLORING_ATTEMPTS = 500# default 50 or 30
-CLIQUE_HEURISTIC_ATTEMPTS = 300
+INIT_COLORING_ATTEMPTS = 1# default 500 or 30
+CLIQUE_HEURISTIC_ATTEMPTS = 300# default 300
 SLAVE_SOLVER_TIMELIMIT = 1000000000000
 SLAVE_HEURISTIC_ATTEMPTS = 10
 problem_list = \
@@ -202,12 +202,15 @@ class MinColoringProblem(MaxCliqueProblem):
         self.master_contraints = dict()
         # Recompute constraints
         for n in self.Nodes:
-            contraint = []
-            for i, v in enumerate(self.state_set_vars.list_):
-                if n in v:
-                    contraint += [self.X_mater_vars[i]]
-            assert contraint
-            constraint = self.cp.sum(contraint) >= 1
+            # contraint = []
+            constraint = [self.X_mater_vars[i]
+                          for i, val in enumerate(self.state_set_vars.list_)
+                          if n in val]
+            # for i, v in enumerate(self.state_set_vars.list_):
+            #     if n in v:
+            #         contraint += [self.X_mater_vars[i]]
+            assert constraint
+            constraint = self.cp.sum(constraint) >= 1
             self.master_contraints[n] = self.cp.add_constraint_bath(constraint)
 
     def add_variables(self, state_sets: set, can_be_duplicate=False):
@@ -312,7 +315,7 @@ class MinColoringProblem(MaxCliqueProblem):
             # Set objective
             # HAVE TO CHECK ORDER
             self.m.remove_objective()
-            self.m.maximize(self.cp.sum([weights[i]*self.Y_slave[n] for i, n in enumerate(self.Nodes)]))
+            self.m.maximize(self.cp.sum([(weights[i] + EPS**2)*self.Y_slave[n] for i, n in enumerate(self.Nodes)]))
             # Solve problem
             sol = self.m.solve()
 
@@ -323,6 +326,12 @@ class MinColoringProblem(MaxCliqueProblem):
                 obj = sol.solve_details.best_bound#get_objective_value()
                 if np.round(obj, PRECISION) > 1.:
                     val = sol.get_all_values()
+                    res = self.ind_set_to_max_sorted_ind_set(
+                        {0: tuple([n for i, n in enumerate(self.Nodes) if val[i] == 1.0])})
+                    if res.copy().pop() in self.state_set_vars._set:
+                        print("Opa")
+                    assert np.abs(obj - sum([(w + EPS**2)*v for w, v in zip(weights, val)])) < EPS
+                    return {tuple(sorted([n for i, n in enumerate(self.Nodes) if val[i] == 1.0]))}, obj
                     return self.ind_set_to_max_sorted_ind_set(
                         {0: tuple([n for i, n in enumerate(self.Nodes) if val[i] == 1.0])}), obj
                 return {()}, obj
@@ -332,8 +341,9 @@ class MinColoringProblem(MaxCliqueProblem):
             sep = {tuple(sorted(sep))} - self.forbiden_sets
             if not sep:
                 return {()}, INF
-            return sep, \
-                   sum([weights[i] for i, n in enumerate(self.Nodes) if n in sep.copy().pop()])
+            sum_ = sum([weights[i] for i, n in enumerate(self.Nodes) if n in sep.copy().pop()])
+            return sep,  INF if sum_ < EPS else sum_
+
 
     def column_gerator_loop(self, solver=False, timelimit=SLAVE_SOLVER_TIMELIMIT,
                                                 attempts=SLAVE_HEURISTIC_ATTEMPTS):
@@ -346,7 +356,8 @@ class MinColoringProblem(MaxCliqueProblem):
                         timelimit - given timelimit
                         attempts - given attempts"""
         while True:
-            weights = self.cp.dual_values(self.master_contraints.values())
+            weights = self.cp.dual_values([self.master_contraints[x]
+                                                for x in sorted(self.master_contraints.keys())])
             assert weights, "Weights is empty!"
             val_cur = self.cp.solution.get_objective_value()
             cols, upper_bound, = self.column_generator(solver=solver,

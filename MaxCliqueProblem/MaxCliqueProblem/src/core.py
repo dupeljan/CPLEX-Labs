@@ -530,6 +530,7 @@ class MaxCliqueProblem:
         """Maximaze independent set
         for each color in ind_set
         """
+        # BUG HERE
         ind_set_maximal = {i: set(v) for i, v in ind_set.items()}
         # Choose pairs of colors
         for i in ind_set.keys():
