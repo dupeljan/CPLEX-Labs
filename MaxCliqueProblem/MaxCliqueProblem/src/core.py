@@ -530,20 +530,20 @@ class MaxCliqueProblem:
         """Maximaze independent set
         for each color in ind_set
         """
-        # BUG HERE
-        ind_set_maximal = {i: set(v) for i, v in ind_set.items()}
-        # Choose pairs of colors
+        ind_set = {i: set(v) for i, v in ind_set.items()}
+        res = ind_set.copy()
         for i in ind_set.keys():
-            for j, color_find in ind_set.items():
-                if i != j:
-                    # Choose elem from color_new
-                    for x in color_find:
-                        # If you can add it to
-                        # this independent set
-                        if all([not self.G.has_edge(x, y) for y in ind_set_maximal[i]]):
-                            ind_set_maximal[i].add(x)
+            while True:
+                val = res[i]
+                repeat = False
+                for x in set(self.Nodes) - val:
+                    if all([not self.G.has_edge(x, y) for y in res[i]]):
+                        res[i].add(x)
+                        repeat = True
+                if not repeat:
+                    break
 
-        return ind_set_maximal
+        return res
 
     def several_separation(self, weights, count=3, local_search=False, use_default_weights=False):
         '''Call separation several times
@@ -623,7 +623,7 @@ class MaxCliqueProblem:
             score += local_search["score"]
             res = local_search["state_set"]
         if np.round(sum([weights[i] for i, n in enumerate(self.Nodes) if n in res]), 8) > 1.:
-            if tuple(sorted(list(res))) in self.state_set_vars._set and  tuple(sorted(list(res))) not in self.forbiden_sets:
+            if tuple(sorted(list(res))) in self.state_set_master_vars and tuple(sorted(list(res))) not in self.forbiden_sets:
                 print("OH mistake into separation")
             return res
         return {}

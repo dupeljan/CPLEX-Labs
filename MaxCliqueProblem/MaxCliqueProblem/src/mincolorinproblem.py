@@ -2,6 +2,7 @@
 # Daniil Lyakhov
 # dupeljan@gmail.com
 import numpy as np
+from math import ceil
 from priorityQueue import PriorityQueue
 from batchedModel import BatchedModel
 from docplex.mp.model import Model
@@ -92,53 +93,28 @@ problem_list = \
     # "zeroin.i.3.col",
 ]
 
-class StateSetConstraints:
-    """Class manage order for
-    adding constraints"""
-    def __init__(self):
-        self._set = set()
-        self._list = list()
-
-    @property
-    def set_(self):
-        return self._set
-
-    @property
-    def list_(self):
-        return self._list.copy()
-
-    def add_constraints(self, constraints: set):
-        """Add constraints to the current
-        set state constraints instance
-        returns
-                constraints which instance haven't before"""
-        new_constraints = constraints - self._set
-        self._list += list(new_constraints)
-        self._set |= new_constraints
-        return new_constraints
-
-    #def remove_constraints(self, constraints: set):
-    #    self._set -= constraints
-    #    self._list = [x for x in self._list if x not in constraints]
-
-    def __getitem__(self, item):
-        return self._list[item]
-
-    def __len__(self):
-        return len(self._list)
-
 class MinColoringProblem(MaxCliqueProblem):
     """Class for MinColoringProblem solving
     by Branch and Price method.
     """
+    @staticmethod
+    def trunc_up(float_number):
+        """wisely floor float number"""
+        if np.isclose(float_number, round(float_number), atol=1e-6):
+            truncated_number = round(float_number)
+        else:
+            truncated_number = ceil(float_number)
+        return truncated_number
+
     def __init__(self, inp):
         super().__init__("coloring/" + inp, "COLORING")
         self.best_coloring_val = len(self.Nodes)
         self.best_coloring_set = self.Nodes
         self.master_contraints = dict()
+        self.state_set_master_vars = list()
         self.forbiden_sets = set()
         self.branch_constraints = dict()
-        self.state_set_vars = StateSetConstraints()
+        #self.state_set_vars = StateSetConstraints()
         self.define_model_and_variables()
         self._precompute_for_slave_problem()
         self.history_branching = list()
@@ -153,10 +129,10 @@ class MinColoringProblem(MaxCliqueProblem):
         for i, j in self.Edges:
             self.slave_model.add_constraint_bath(self.Y_slave[i] + self.Y_slave[j] <= 1)
         # Add strong constraints
-        for i in range(CLIQUE_HEURISTIC_ATTEMPTS):
-            clique = self.init_heuristic_clique(random=True)
-            if len(clique) > 2:
-                self.slave_model.add_constraint_bath(self.slave_model.sum([self.Y_slave[n] for n in clique]) <= 1)
+        #for i in range(CLIQUE_HEURISTIC_ATTEMPTS):
+        #    clique = self.init_heuristic_clique(random=True)
+        #    if len(clique) > 2:
+        #        self.slave_model.add_constraint_bath(self.slave_model.sum([self.Y_slave[n] for n in clique]) <= 1)
 
     def ind_set_to_max_sorted_ind_set(self, set_):
         color_to_max_ind_set = self.maximal_ind_set_colors(set_)
@@ -204,7 +180,7 @@ class MinColoringProblem(MaxCliqueProblem):
         for n in self.Nodes:
             # contraint = []
             constraint = [self.X_mater_vars[i]
-                          for i, val in enumerate(self.state_set_vars.list_)
+                          for i, val in enumerate(self.state_set_master_vars)
                           if n in val]
             # for i, v in enumerate(self.state_set_vars.list_):
             #     if n in v:
@@ -213,7 +189,7 @@ class MinColoringProblem(MaxCliqueProblem):
             constraint = self.master_model.sum(constraint) >= 1
             self.master_contraints[n] = self.master_model.add_constraint_bath(constraint)
 
-    def add_variables(self, state_sets: set, can_be_duplicate=False):
+    def add_variables(self, vars: list):
         """Add variables to model
         params: state_set: set - list of sets of nodes,
          which needs to be in model. state_sets must
@@ -221,16 +197,11 @@ class MinColoringProblem(MaxCliqueProblem):
          returns:
                     True if there is new variables
                     else False"""
-        shift = len(self.state_set_vars)
-        new_state_sets = self.state_set_vars.add_constraints(state_sets)
+        assert not any([x in self.state_set_master_vars for x in vars])
 
-        # Assert slave problem consistency
-        if not can_be_duplicate:
-            assert state_sets == new_state_sets
-
-        if not new_state_sets:
-            return False
-        for i, state_set in enumerate(new_state_sets):
+        shift = len(self.state_set_master_vars)
+        self.state_set_master_vars += vars
+        for i, state_set in enumerate(vars):
             # Number in list for new var
             j = shift + i
             self.X_mater_vars[j] = self.master_model.continuous_var(name='x_{0}'.format(j))
@@ -248,16 +219,16 @@ class MinColoringProblem(MaxCliqueProblem):
         # Content of each state set
         # State set model vars
         self.X_mater_vars = dict()
-        vars = []
+        vars = set()
         for _ in range(attempts):
-            vars.append(self.get_variables(), can_be_duplicate=True)
+            vars |= self.get_variables()
         # State set model vars
         #self.X = {i: self.cp.continuous_var(name='x_{0}'.format(i)) for i in range(len(self.V))}
         # Nodes variables
         #self.N_var = {i: self.cp.continuous_var(name="n_{0}".format(i)) for i in self.Nodes}
         # Load constraints
         # Set objective
-        self.add_variables(vars)
+        self.add_variables(list(vars))
         self.master_model.minimize(self.master_model.sum(self.X_mater_vars))
 
     def solve(self, timeout=7200):
@@ -329,12 +300,9 @@ class MinColoringProblem(MaxCliqueProblem):
                     val = sol.get_all_values()
                     res = self.ind_set_to_max_sorted_ind_set(
                         {0: tuple([n for i, n in enumerate(self.Nodes) if val[i] == 1.0])})
-                    if res.copy().pop() in self.state_set_vars._set:
-                        print("Opa")
-                    assert np.abs(obj - sum([(w + EPS**2)*v for w, v in zip(weights, val)])) < EPS
-                    return {tuple(sorted([n for i, n in enumerate(self.Nodes) if val[i] == 1.0]))}, obj
-                    return self.ind_set_to_max_sorted_ind_set(
-                        {0: tuple([n for i, n in enumerate(self.Nodes) if val[i] == 1.0])}), obj
+                    if res.copy().pop() in self.state_set_master_vars:
+                        print("Duplicate constraints!")
+                    return res, obj
                 return {()}, obj
             return {()}, INF
         else:
@@ -365,8 +333,8 @@ class MinColoringProblem(MaxCliqueProblem):
                                                        timelimit=timelimit,
                                                        attempts=attempts)
             if solver:
-                assert not cols in self.forbiden_sets
-            lower_bound = np.round(0.5 + val_cur/upper_bound)
+                assert cols not in self.forbiden_sets
+            lower_bound = self.trunc_up(0.5 + val_cur/upper_bound)
             if lower_bound >= self.best_coloring_val:
                 print("Cut it!")
                 return True
@@ -374,17 +342,9 @@ class MinColoringProblem(MaxCliqueProblem):
             if not cols or cols == {()}:
                 return False
 
-            if not self.add_variables(cols):
-                if solver:
-                    print("OH")
-                assert not solver
-                return False
+            self.add_variables(cols)
+            self.master_model.solve()
 
-            sol = self.master_model.solve()
-            # Exit if solution doesn't change
-            # significantly
-            # if MinColoringProblem.is_tailing_off(sol.get_objective_value(), val_cur):
-            #     return False
 
     def BnPColoring(self):
         # Check timeout
@@ -430,8 +390,8 @@ class MinColoringProblem(MaxCliqueProblem):
             # Add constraint to model
             self._add_branch_constraint(constr, i)
             if constr.rhs.constant == 0:
-                self.forbiden_sets |= set([self.state_set_vars[i]])
-                forbid_set = self.state_set_vars[i]
+                self.forbiden_sets |= set([self.state_set_master_vars[i]])
+                forbid_set = self.state_set_master_vars[i]
                 forb_constr = self.slave_model.add_constraint(self.slave_model.sum(
                                         [self.Y_slave[n] for n in forbid_set]) <= len(forbid_set) - 1)
 
@@ -439,7 +399,7 @@ class MinColoringProblem(MaxCliqueProblem):
             self.BnPColoring()
             self._remove_branch_constraint(constr, i)
             if constr.rhs.constant == 0:
-                self.forbiden_sets -= set([self.state_set_vars[i]])
+                self.forbiden_sets -= set([self.state_set_master_vars[i]])
                 self.slave_model.remove_constraint(forb_constr)
 
     def output_statistic(self, outp):
