@@ -23,7 +23,7 @@ from core import MaxCliqueProblem
 from core import trunc_precisely
 
 # Hyperparameters
-EPS = 1e-1
+EPS = 1e-6
 PRECISION = 4
 INF = np.inf
 INIT_COLORING_ATTEMPTS = 1# default 500 or 30
@@ -117,9 +117,9 @@ class StateSetConstraints:
         self._set |= new_constraints
         return new_constraints
 
-    def remove_constraints(self, constraints: set):
-        self._set -= constraints
-        self._list = [x for x in self._list if x not in constraints]
+    #def remove_constraints(self, constraints: set):
+    #    self._set -= constraints
+    #    self._list = [x for x in self._list if x not in constraints]
 
     def __getitem__(self, item):
         return self._list[item]
@@ -146,17 +146,17 @@ class MinColoringProblem(MaxCliqueProblem):
 
     def _precompute_for_slave_problem(self):
         """Precompute constraints for slave problem"""
-        self.m = BatchedModel()
+        self.slave_model = BatchedModel()
         # Add variables
-        self.Y_slave = {n: self.m.binary_var(name="y_{0}".format(n)) for n in self.Nodes}
+        self.Y_slave = {n: self.slave_model.binary_var(name="y_{0}".format(n)) for n in self.Nodes}
         # Add ground constraints
         for i, j in self.Edges:
-            self.m.add_constraint_bath(self.Y_slave[i] + self.Y_slave[j] <= 1)
+            self.slave_model.add_constraint_bath(self.Y_slave[i] + self.Y_slave[j] <= 1)
         # Add strong constraints
         for i in range(CLIQUE_HEURISTIC_ATTEMPTS):
             clique = self.init_heuristic_clique(random=True)
             if len(clique) > 2:
-                self.m.add_constraint_bath(self.m.sum([self.Y_slave[n] for n in clique]) <= 1)
+                self.slave_model.add_constraint_bath(self.slave_model.sum([self.Y_slave[n] for n in clique]) <= 1)
 
     def ind_set_to_max_sorted_ind_set(self, set_):
         color_to_max_ind_set = self.maximal_ind_set_colors(set_)
@@ -180,7 +180,7 @@ class MinColoringProblem(MaxCliqueProblem):
         params:
                 constraint - given constraint"""
         assert i not in self.history_branching, "INF LOOP"
-        self.cp.add_constraint_bath(constraint)
+        self.master_model.add_constraint_bath(constraint)
         self.history_branching.append(i)
 
 
@@ -188,17 +188,17 @@ class MinColoringProblem(MaxCliqueProblem):
         """Remove branch constraint to self.cp model
         params:
                 constraint - given constraint"""
-        self.cp.remove_constraint_bath(constraint)
+        self.master_model.remove_constraint_bath(constraint)
         self.history_branching.remove(i)
 
     def reload_constraints(self):
         # Remove all constraints first
-        self.cp.apply_batch()
+        self.master_model.apply_batch()
         assert len(self.master_contraints) == len(self.Nodes) \
             or not self.master_contraints
-        constr_num = self.cp.number_of_constraints
-        self.cp.remove_constraints([c for c in self.master_contraints.values()])
-        assert constr_num - self.cp.number_of_constraints in [0, len(self.Nodes)]
+        constr_num = self.master_model.number_of_constraints
+        self.master_model.remove_constraints([c for c in self.master_contraints.values()])
+        assert constr_num - self.master_model.number_of_constraints in [0, len(self.Nodes)]
         self.master_contraints = dict()
         # Recompute constraints
         for n in self.Nodes:
@@ -210,8 +210,8 @@ class MinColoringProblem(MaxCliqueProblem):
             #     if n in v:
             #         contraint += [self.X_mater_vars[i]]
             assert constraint
-            constraint = self.cp.sum(constraint) >= 1
-            self.master_contraints[n] = self.cp.add_constraint_bath(constraint)
+            constraint = self.master_model.sum(constraint) >= 1
+            self.master_contraints[n] = self.master_model.add_constraint_bath(constraint)
 
     def add_variables(self, state_sets: set, can_be_duplicate=False):
         """Add variables to model
@@ -233,31 +233,32 @@ class MinColoringProblem(MaxCliqueProblem):
         for i, state_set in enumerate(new_state_sets):
             # Number in list for new var
             j = shift + i
-            self.X_mater_vars[j] = self.cp.continuous_var(name='x_{0}'.format(j))
+            self.X_mater_vars[j] = self.master_model.continuous_var(name='x_{0}'.format(j))
         # Update target function
-        self.cp.remove_objective()
-        self.cp.minimize(self.cp.sum(self.X_mater_vars))
+        self.master_model.remove_objective()
+        self.master_model.minimize(self.master_model.sum(self.X_mater_vars))
         self.reload_constraints()
         return True
 
     def define_model_and_variables(self, attempts=INIT_COLORING_ATTEMPTS):
-        self.cp = BatchedModel(name="Min_coloring")
+        self.master_model = BatchedModel(name="Min_coloring")
         # Add variables
         # Variables now is state sets
         # Initialize model by some colors set
         # Content of each state set
         # State set model vars
         self.X_mater_vars = dict()
+        vars = []
         for _ in range(attempts):
-            self.add_variables(self.get_variables(), can_be_duplicate=True)
+            vars.append(self.get_variables(), can_be_duplicate=True)
         # State set model vars
         #self.X = {i: self.cp.continuous_var(name='x_{0}'.format(i)) for i in range(len(self.V))}
         # Nodes variables
         #self.N_var = {i: self.cp.continuous_var(name="n_{0}".format(i)) for i in self.Nodes}
         # Load constraints
         # Set objective
-        self.cp.apply_batch()
-        self.cp.minimize(self.cp.sum(self.X_mater_vars))
+        self.add_variables(vars)
+        self.master_model.minimize(self.master_model.sum(self.X_mater_vars))
 
     def solve(self, timeout=7200):
         self.timeout = timeout
@@ -282,7 +283,7 @@ class MinColoringProblem(MaxCliqueProblem):
                 or reversed one where
                 i = set_to_branch_index"""
         _set = self.X_mater_vars[set_to_branch_index]
-        val = self.cp.solution.get_all_values()[set_to_branch_index]
+        val = self.master_model.solution.get_all_values()[set_to_branch_index]
         res = [_set == 0, _set == 1]
         return res if val < 0.5 else res[::-1]
 
@@ -308,16 +309,16 @@ class MinColoringProblem(MaxCliqueProblem):
         if solver:
             # Set timelimit
             if timelimit != INF:
-                self.m.parameters.timelimit = timelimit
+                self.slave_model.parameters.timelimit = timelimit
             else:
-                self.m.parameters.reset_all()
+                self.slave_model.parameters.reset_all()
             # Add forbiden constraints
             # Set objective
             # HAVE TO CHECK ORDER
-            self.m.remove_objective()
-            self.m.maximize(self.cp.sum([(weights[i] + EPS**2)*self.Y_slave[n] for i, n in enumerate(self.Nodes)]))
+            self.slave_model.remove_objective()
+            self.slave_model.maximize(self.master_model.sum([weights[i] * self.Y_slave[n] for i, n in enumerate(self.Nodes)]))
             # Solve problem
-            sol = self.m.solve()
+            sol = self.slave_model.solve()
 
             # remove forbiden constraints
             #self.m.remove_constraints(constr_forbid)
@@ -341,8 +342,7 @@ class MinColoringProblem(MaxCliqueProblem):
             sep = {tuple(sorted(sep))} - self.forbiden_sets
             if not sep:
                 return {()}, INF
-            sum_ = sum([weights[i] for i, n in enumerate(self.Nodes) if n in sep.copy().pop()])
-            return sep,  INF if sum_ < EPS else sum_
+            return sep,  INF
 
 
     def column_gerator_loop(self, solver=False, timelimit=SLAVE_SOLVER_TIMELIMIT,
@@ -356,10 +356,10 @@ class MinColoringProblem(MaxCliqueProblem):
                         timelimit - given timelimit
                         attempts - given attempts"""
         while True:
-            weights = self.cp.dual_values([self.master_contraints[x]
-                                                for x in sorted(self.master_contraints.keys())])
+            weights = self.master_model.dual_values([self.master_contraints[x]
+                                                     for x in sorted(self.master_contraints.keys())])
             assert weights, "Weights is empty!"
-            val_cur = self.cp.solution.get_objective_value()
+            val_cur = self.master_model.solution.get_objective_value()
             cols, upper_bound, = self.column_generator(solver=solver,
                                                        weights=weights,
                                                        timelimit=timelimit,
@@ -380,7 +380,7 @@ class MinColoringProblem(MaxCliqueProblem):
                 assert not solver
                 return False
 
-            sol = self.cp.solve()
+            sol = self.master_model.solve()
             # Exit if solution doesn't change
             # significantly
             # if MinColoringProblem.is_tailing_off(sol.get_objective_value(), val_cur):
@@ -391,7 +391,7 @@ class MinColoringProblem(MaxCliqueProblem):
         if self.check_timeout():
             return
 
-        sol = self.cp.solve()
+        sol = self.master_model.solve()
         # Prune if there is no solution
         # on this branch
         if sol is None:
@@ -406,7 +406,7 @@ class MinColoringProblem(MaxCliqueProblem):
 
         # If we can't prune it
         # thus try to branch it
-        val = self.cp.solution.get_all_values()
+        val = self.master_model.solution.get_all_values()
         i = super().get_node_index_to_branch(val)
 
         # If we can't branch
@@ -414,16 +414,16 @@ class MinColoringProblem(MaxCliqueProblem):
             # Prove it by solver
             self.column_gerator_loop(solver=True, timelimit=INF)
             # Reprove it's integerness
-            val = self.cp.solution.get_all_values()
+            val = self.master_model.solution.get_all_values()
             if super().get_node_index_to_branch(val) == -1:
-                sol = self.cp.solution
+                sol = self.master_model.solution
                 val = trunc_precisely(sol.get_objective_value())
                 if val < self.best_coloring_val:
                     self.best_coloring_val = val
                     self.best_coloring_set = sol.get_all_values()
                     print("Found solution: ", self.best_coloring_val)
 
-            return
+                return
 
         # Branch it
         for constr in self.get_optimal_branch_list(i):
@@ -432,7 +432,7 @@ class MinColoringProblem(MaxCliqueProblem):
             if constr.rhs.constant == 0:
                 self.forbiden_sets |= set([self.state_set_vars[i]])
                 forbid_set = self.state_set_vars[i]
-                forb_constr = self.m.add_constraint(self.m.sum(
+                forb_constr = self.slave_model.add_constraint(self.slave_model.sum(
                                         [self.Y_slave[n] for n in forbid_set]) <= len(forbid_set) - 1)
 
             #print("Branch with constr: ", i)
@@ -440,7 +440,7 @@ class MinColoringProblem(MaxCliqueProblem):
             self._remove_branch_constraint(constr, i)
             if constr.rhs.constant == 0:
                 self.forbiden_sets -= set([self.state_set_vars[i]])
-                self.m.remove_constraint(forb_constr)
+                self.slave_model.remove_constraint(forb_constr)
 
     def output_statistic(self, outp):
         outp.write("Problem INP: " + str(self.INP) + "\n")

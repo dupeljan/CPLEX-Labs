@@ -711,13 +711,13 @@ class MaxCliqueProblem:
         self._conf = False
 
     def define_model_and_variables(self):
-        self.cp = BatchedModel(name='Max_clique')
+        self.master_model = BatchedModel(name='Max_clique')
        # Continious model vars
-        self.Y = {i: self.cp.continuous_var(name='y_{0}'.format(i)) for i in self.Nodes}
+        self.Y = {i: self.master_model.continuous_var(name='y_{0}'.format(i)) for i in self.Nodes}
         # y constrains
-        self.Y_cons = {n: self.cp.add_constraint_bath(self.Y[n] <= 1) for n in self.Nodes}
+        self.Y_cons = {n: self.master_model.add_constraint_bath(self.Y[n] <= 1) for n in self.Nodes}
         # Set objective
-        self.cp.maximize(self.cp.sum(self.Y))
+        self.master_model.maximize(self.master_model.sum(self.Y))
 
     def add_coloring_constraints(self):
         # Add constrains: nodes cant be in one clique
@@ -734,7 +734,7 @@ class MaxCliqueProblem:
             ind_set = self.colors_to_indep_set(coloring)
             # Get it to maximal on including
             ind_set_maximal = self.maximal_ind_set_colors(ind_set)
-            comps |= {self.cp.sum([self.Y[i] for i in x]) <= 1 for x in ind_set_maximal.values()}
+            comps |= {self.master_model.sum([self.Y[i] for i in x]) <= 1 for x in ind_set_maximal.values()}
 
         # Trying find best coloring in randomized way
         coloring_list = list()
@@ -745,17 +745,17 @@ class MaxCliqueProblem:
 
         for elem in coloring_list[:13]:#[:], [:20]
             ind_set_maximal = self.maximal_ind_set_colors(elem)
-            comps |= {self.cp.sum([self.Y[i] for i in x]) <= 1 for x in ind_set_maximal.values()}
+            comps |= {self.master_model.sum([self.Y[i] for i in x]) <= 1 for x in ind_set_maximal.values()}
 
         # Add constraints
-        self.cp.add_constraints(comps)
-        print("Constraints count after coloring: ", self.cp.number_of_constraints)
+        self.master_model.add_constraints(comps)
+        print("Constraints count after coloring: ", self.master_model.number_of_constraints)
 
     def configure_model_BnC(self):
         self.define_model_and_variables()
         heurist_static_set = self.init_heuristic_static_set()
         assert self._is_state_set(heurist_static_set), "Error, heuristic return connected set"
-        self.cp.add_constraint_bath(self.cp.sum([self.Y[n] for n in heurist_static_set]) <= 1)
+        self.master_model.add_constraint_bath(self.master_model.sum([self.Y[n] for n in heurist_static_set]) <= 1)
         self.add_coloring_constraints()
         self._conf = True
 
@@ -768,14 +768,14 @@ class MaxCliqueProblem:
             if [i, j] not in self.Edges and [j, i] not in self.Edges:
                 batch += [self.Y[i] + self.Y[j] <= 1]
 
-        self.cp.add_constraints(batch)
+        self.master_model.add_constraints(batch)
 
         self.add_coloring_constraints()
 
         # Allow BnB to work
         self._conf = True
 
-        print("Constraints count: ", self.cp.number_of_constraints)
+        print("Constraints count: ", self.master_model.number_of_constraints)
 
     def check_timeout(self):
         """Check if time for computing is over"""
@@ -812,7 +812,7 @@ class MaxCliqueProblem:
             return
         # Solve the problem
         # in current state
-        sol = self.cp.solve()
+        sol = self.master_model.solve()
 
         # If there is no solution
         if sol is None:
@@ -846,8 +846,8 @@ class MaxCliqueProblem:
 
             several_sep = self.several_separation(val, count=BNC_COUNT_OF_SEPARATION_ATTEMPTS)
             for sep in [s for s in several_sep if len(s) > 1]:
-                self.cp.add_constraint_bath(self.cp.sum([self.Y[n] for n in sep]) <= 1)
-            sol = self.cp.solve()
+                self.master_model.add_constraint_bath(self.master_model.sum([self.Y[n] for n in sep]) <= 1)
+            sol = self.master_model.solve()
 
             if sol is None:
                 return
@@ -872,17 +872,17 @@ class MaxCliqueProblem:
 
 
         # If there is lot of constraints
-        if self.cp.number_of_constraints > self.constraint_limit: #+ self.ground_constr:
+        if self.master_model.number_of_constraints > self.constraint_limit: #+ self.ground_constr:
             # Drop some constraints randomly
-            self.cp.apply_batch()
+            self.master_model.apply_batch()
             print("drop some constr from the model")
 
             # Choose random indexes to drop
             # Do not drop first N constraints which is x_i < 1
-            constr = [self.cp.get_constraint_by_index(id) for id in
-                      np.arange(len(self.Nodes), self.cp.number_of_constraints)]
+            constr = [self.master_model.get_constraint_by_index(id) for id in
+                      np.arange(len(self.Nodes), self.master_model.number_of_constraints)]
             constr = [x for x in constr if x is not None and 1 < x.lhs.size]
-            self.ground_constr = self.cp.number_of_constraints - len(constr)
+            self.ground_constr = self.master_model.number_of_constraints - len(constr)
             print("Ground constr count: ", self.ground_constr)
             # TODO make it by priority queue
             constr = sorted(constr, key=lambda x: x.slack_value)[BNC_KEEP_CONSTR_COUNT:]
@@ -898,9 +898,9 @@ class MaxCliqueProblem:
             '''
             # constr = np.random.choice(np.array([x for x in constr if x is not None and 1 < x.lhs.size]),
             #                         size=np.int(np.round(len(constr) / 3)))
-            self.cp.remove_constraints(constr)
+            self.master_model.remove_constraints(constr)
 
-            print("Now model has ", self.cp.number_of_constraints, "constraints")
+            print("Now model has ", self.master_model.number_of_constraints, "constraints")
 
         # Get best branching value
         i = MaxCliqueProblem.get_node_index_to_branch(val)
@@ -909,7 +909,7 @@ class MaxCliqueProblem:
             corrupted = self.corrupted_edges(val)
             if corrupted:
                 for c in list(corrupted)[:max(50, int(len(corrupted) / BNC_CORRUPTED_EDGES_PART))]:
-                    self.cp.add_constraint_bath(self.Y[c[0]] + self.Y[c[1]] <= 1)
+                    self.master_model.add_constraint_bath(self.Y[c[0]] + self.Y[c[1]] <= 1)
 
                 self.BnCMaxClique()
 
@@ -929,7 +929,7 @@ class MaxCliqueProblem:
 
         for ind in br:
             # Set i-th constraint to val
-            constr = self.cp.add_constraint_bath(self.Y[self.Nodes[i]] == ind)
+            constr = self.master_model.add_constraint_bath(self.Y[self.Nodes[i]] == ind)
 
             #print("Branch: " + str(constr), "obj: " + str(obj))
 
@@ -937,7 +937,7 @@ class MaxCliqueProblem:
             self.BnCMaxClique()
 
             # Remove constrain from the model
-            self.cp.remove_constraint_bath(constr)
+            self.master_model.remove_constraint_bath(constr)
 
     def BnBMaxClique(self):
         """Compute optimal solutuon
@@ -947,7 +947,7 @@ class MaxCliqueProblem:
 
         # Solve the problem
         # in current state
-        sol = self.cp.solve()
+        sol = self.master_model.solve()
 
         # If there is no solution
         if sol is None:
@@ -981,7 +981,7 @@ class MaxCliqueProblem:
 
         for ind in [0, 1]:
             # Set i-th constraint to val
-            constr = self.cp.add_constraint_bath(self.Y[self.Nodes[i]] == ind)
+            constr = self.master_model.add_constraint_bath(self.Y[self.Nodes[i]] == ind)
 
             print("Branch: " + str(constr), "obj: " + str(obj))
 
@@ -989,7 +989,7 @@ class MaxCliqueProblem:
             self.BnBMaxClique()
 
             # Remove constrain from the model
-            self.cp.remove_constraint_bath(constr)
+            self.master_model.remove_constraint_bath(constr)
 
     def BnBMaxCliqueDFS(self):
         """Compute optimal solutuon
@@ -1020,7 +1020,7 @@ class MaxCliqueProblem:
             elem = stack.pop()
             # If we don't visit this node yet
             if elem["val"] == 0:
-                sol = self.cp.solve()
+                sol = self.master_model.solve()
                 if sol is None:
                     print("None solution found")
                     continue
@@ -1056,7 +1056,7 @@ class MaxCliqueProblem:
 
                 # Set elem branch var
                 i = self.Y[self.Nodes[i]]
-                elem['constr'] = self.cp.add_constraint_bath(i == 0)
+                elem['constr'] = self.master_model.add_constraint_bath(i == 0)
 
                 #print("Branch by ", i, " obj: ", obj)
                 for ind in range(2):
@@ -1077,8 +1077,8 @@ class MaxCliqueProblem:
             # If it's already visited once node
             elif elem["val"] == 1:
                 constr = elem["constr"]
-                self.cp.remove_constraint_bath(constr)
-                elem["constr"] = self.cp.add_constraint_bath(constr.lhs == 1)
+                self.master_model.remove_constraint_bath(constr)
+                elem["constr"] = self.master_model.add_constraint_bath(constr.lhs == 1)
 
                 '''
                 cons_new = self.cp.number_of_constraints - cons
@@ -1092,7 +1092,7 @@ class MaxCliqueProblem:
 
             # If it's already visited twice node
             else:
-                self.cp.remove_constraint_bath(elem["constr"])
+                self.master_model.remove_constraint_bath(elem["constr"])
 
                 '''
                 cons_new = self.cp.number_of_constraints - cons
@@ -1117,7 +1117,7 @@ class MaxCliqueProblem:
         assert self._conf, "Configurate model first!"
         
         nodes = PriorityQueue()
-        sol = self.cp.solve()
+        sol = self.master_model.solve()
         objective_best = (0, 0)
         # Constraints of pred computed node
         constr_set_prev = frozenset()
@@ -1146,9 +1146,9 @@ class MaxCliqueProblem:
             intersec = constr_set_prev.intersection(constr_set)
             # Remove inappropriate constraints
 
-            self.cp.remove_constraints(constr_set_prev.difference(intersec))
+            self.master_model.remove_constraints(constr_set_prev.difference(intersec))
             # Add appropriate constraints
-            self.cp.add_constraints(constr_set.difference(intersec))
+            self.master_model.add_constraints(constr_set.difference(intersec))
 
             constr_set_prev = constr_set
             print("Time to jump: ", time.time() - time_beg)
@@ -1185,10 +1185,10 @@ class MaxCliqueProblem:
 
                 for ind in [0, 1]:
                     # Set i-th constraint to val 
-                    constr = self.cp.add_constraint(var_to_branch == ind)
+                    constr = self.master_model.add_constraint(var_to_branch == ind)
 
                     # Solve it
-                    sol = self.cp.solve()
+                    sol = self.master_model.solve()
 
                     print("Branching: ", constr)
                     if sol is not None:
@@ -1202,7 +1202,7 @@ class MaxCliqueProblem:
                         nodes.add_task(priority=obj, task=node_new)
                     
                     # Remove constrain from the model
-                    self.cp.remove_constraint(constr)
+                    self.master_model.remove_constraint(constr)
 
 if __name__ == "__main__":
 
