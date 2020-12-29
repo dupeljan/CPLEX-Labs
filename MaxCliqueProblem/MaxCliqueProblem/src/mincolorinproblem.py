@@ -178,7 +178,8 @@ class MinColoringProblem(MaxCliqueProblem):
         names = []
         for v in new_set:
             names.append(str(v))
-            constr = self.master_model.get_constraint_by_name(str(v)).lhs + self.X_mater_vars[-1] >= 1
+            constr = self.master_model.get_constraint_by_name(str(v)).lhs\
+                            + self.X_mater_vars[len(self.X_mater_vars) - 1] >= 1
             new_constr.append(constr)
 
         old_constraints = [self.master_model.get_constraint_by_name(str(v)) for v in new_set]
@@ -205,7 +206,7 @@ class MinColoringProblem(MaxCliqueProblem):
         names = []
         constraints = []
         for n in self.Nodes:
-            names += str(n)
+            names += [str(n)]
             constraint = [self.X_mater_vars[i]
                           for i, val in enumerate(self.state_set_master_vars)
                           if n in val]
@@ -287,15 +288,15 @@ class MinColoringProblem(MaxCliqueProblem):
                         {0: tuple([n for i, n in enumerate(self.Nodes) if val[i] == 1.0])})
                     if res.copy().pop() in self.state_set_master_vars:
                         print("Duplicate constraints!")
-                    return res, obj
-                return {()}, obj
-            return {()}, INF
+                    return res.pop(), obj
+                return (), obj
+            return (), INF
         else:
             sep = self.separation(weights, local_search=True, use_default_weights=True)
             sep = {tuple(sorted(sep))} - self.forbiden_sets
             if not sep:
-                return {()}, INF
-            return sep,  INF
+                return (), INF
+            return sep.pop(),  INF
 
 
     def column_gerator_loop(self, solver=False, timelimit=SLAVE_SOLVER_TIMELIMIT,
