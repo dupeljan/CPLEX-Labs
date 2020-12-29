@@ -167,68 +167,53 @@ class MinColoringProblem(MaxCliqueProblem):
         self.master_model.remove_constraint_bath(constraint)
         self.history_branching.remove(i)
 
-    def reload_constraints(self):
-        # Remove all constraints first
+    def update_master_model(self, state_set: tuple):
+        ''' finction to update constraints, main variables and objective in the model '''
+        assert state_set not in self.state_set_master_vars
+        self.state_set_master_vars.append(state_set)
+
+        self.X_mater_vars.update({len(self.X_mater_vars): self.master_model.continuous_var(name='x_{0}'.format(len(self.X_mater_vars)))})
+        new_set = self.state_set_master_vars[-1]
+        new_constr = []
+        names = []
+        for v in new_set:
+            names.append(str(v))
+            constr = self.master_model.get_constraint_by_name(str(v)).lhs + self.X_mater_vars[-1] >= 1
+            new_constr.append(constr)
+
+        old_constraints = [self.master_model.get_constraint_by_name(str(v)) for v in new_set]
+        self.master_model.remove_constraints(old_constraints)
+        self.master_model.add_constraints(new_constr, names=names)
         self.master_model.apply_batch()
-        assert len(self.master_contraints) == len(self.Nodes) \
-            or not self.master_contraints
-        constr_num = self.master_model.number_of_constraints
-        self.master_model.remove_constraints([c for c in self.master_contraints.values()])
-        assert constr_num - self.master_model.number_of_constraints in [0, len(self.Nodes)]
-        self.master_contraints = dict()
-        # Recompute constraints
-        for n in self.Nodes:
-            # contraint = []
-            constraint = [self.X_mater_vars[i]
-                          for i, val in enumerate(self.state_set_master_vars)
-                          if n in val]
-            # for i, v in enumerate(self.state_set_vars.list_):
-            #     if n in v:
-            #         contraint += [self.X_mater_vars[i]]
-            assert constraint
-            constraint = self.master_model.sum(constraint) >= 1
-            self.master_contraints[n] = self.master_model.add_constraint_bath(constraint)
-
-    def add_variables(self, vars: list):
-        """Add variables to model
-        params: state_set: set - list of sets of nodes,
-         which needs to be in model. state_sets must
-         distinguish from all other variables
-         returns:
-                    True if there is new variables
-                    else False"""
-        assert not any([x in self.state_set_master_vars for x in vars])
-
-        shift = len(self.state_set_master_vars)
-        self.state_set_master_vars += vars
-        for i, state_set in enumerate(vars):
-            # Number in list for new var
-            j = shift + i
-            self.X_mater_vars[j] = self.master_model.continuous_var(name='x_{0}'.format(j))
-        # Update target function
+        # update objective
         self.master_model.remove_objective()
-        self.master_model.minimize(self.master_model.sum(self.X_mater_vars))
-        self.reload_constraints()
-        return True
+        self.master_model.minimize(self.master_model.sum([v for v in self.X_mater_vars.values()]))
 
     def define_model_and_variables(self, attempts=INIT_COLORING_ATTEMPTS):
         self.master_model = BatchedModel(name="Min_coloring")
-        # Add variables
-        # Variables now is state sets
-        # Initialize model by some colors set
-        # Content of each state set
-        # State set model vars
+
         self.X_mater_vars = dict()
         vars = set()
         for _ in range(attempts):
             vars |= self.get_variables()
-        # State set model vars
-        #self.X = {i: self.cp.continuous_var(name='x_{0}'.format(i)) for i in range(len(self.V))}
-        # Nodes variables
-        #self.N_var = {i: self.cp.continuous_var(name="n_{0}".format(i)) for i in self.Nodes}
-        # Load constraints
+
+        # Add variables
+        self.state_set_master_vars += list(vars)
+        for i, state_set in enumerate(vars):
+            self.X_mater_vars[i] = self.master_model.continuous_var(name='x_{0}'.format(i))
+        # Init constraints
+        names = []
+        constraints = []
+        for n in self.Nodes:
+            names += str(n)
+            constraint = [self.X_mater_vars[i]
+                          for i, val in enumerate(self.state_set_master_vars)
+                          if n in val]
+            assert constraint
+            constraints += [self.master_model.sum(constraint) >= 1]
+        self.master_model.add_constraints(constraints, names=names)
+
         # Set objective
-        self.add_variables(list(vars))
         self.master_model.minimize(self.master_model.sum(self.X_mater_vars))
 
     def solve(self, timeout=7200):
@@ -324,8 +309,7 @@ class MinColoringProblem(MaxCliqueProblem):
                         timelimit - given timelimit
                         attempts - given attempts"""
         while True:
-            weights = self.master_model.dual_values([self.master_contraints[x]
-                                                     for x in sorted(self.master_contraints.keys())])
+            weights = self.master_model.dual_values([self.master_model.get_constraint_by_name(str(v)) for v in self.Nodes])
             assert weights, "Weights is empty!"
             val_cur = self.master_model.solution.get_objective_value()
             cols, upper_bound, = self.column_generator(solver=solver,
@@ -334,7 +318,7 @@ class MinColoringProblem(MaxCliqueProblem):
                                                        attempts=attempts)
             if solver:
                 assert cols not in self.forbiden_sets
-            lower_bound = self.trunc_up(0.5 + val_cur/upper_bound)
+            lower_bound = self.trunc_up(val_cur/upper_bound)
             if lower_bound >= self.best_coloring_val:
                 print("Cut it!")
                 return True
@@ -342,9 +326,8 @@ class MinColoringProblem(MaxCliqueProblem):
             if not cols or cols == {()}:
                 return False
 
-            self.add_variables(cols)
+            self.update_master_model(cols)
             self.master_model.solve()
-
 
     def BnPColoring(self):
         # Check timeout
